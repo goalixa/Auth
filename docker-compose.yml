@@ -1,0 +1,14 @@
+services:
+  auth:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      PORT: "5001"
+      AUTH_DATABASE_URI: "sqlite:////data/data.db"
+    volumes:
+      - auth_data:/data
+    restart: unless-stopped
+
+volumes:
+  auth_data:
