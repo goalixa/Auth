@@ -12,6 +12,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -32,6 +33,7 @@ from authlib.integrations.base_client.errors import OAuthError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data.db")
+UI_DIR = os.path.join(BASE_DIR, "auth-ui")
 
 
 def create_app():
@@ -90,6 +92,27 @@ def create_app():
         )
         return response
 
+    def issue_auth_json_response(user):
+        response = make_response({"success": True, "user": {"email": user.email}})
+        max_age = app.config["AUTH_JWT_TTL_MINUTES"] * 60
+        response.set_cookie(
+            app.config["AUTH_COOKIE_NAME"],
+            create_token(
+                user_id=user.id,
+                email=user.email,
+                secret=app.config["AUTH_JWT_SECRET"],
+                ttl_minutes=app.config["AUTH_JWT_TTL_MINUTES"],
+            ),
+            max_age=max_age,
+            httponly=True,
+            samesite="Lax",
+            secure=app.config["AUTH_COOKIE_SECURE"],
+        )
+        return response
+
+    def send_ui(filename):
+        return send_from_directory(UI_DIR, filename)
+
     def require_login(next_url=None):
         if g.current_user:
             return None
@@ -102,11 +125,84 @@ def create_app():
     def health():
         return {"status": "ok"}
 
+    @app.route("/", methods=["GET"])
+    def ui_root():
+        return send_ui("index.html")
+
+    @app.route("/dashboard", methods=["GET"])
+    def dashboard():
+        if not g.current_user:
+            return redirect(url_for("login"))
+        return send_ui("dashboard.html")
+
+    @app.route("/api/login", methods=["POST"])
+    def api_login():
+        data = request.get_json(silent=True) or {}
+        email = str(data.get("email", "")).strip().lower()
+        password = data.get("password", "")
+        if not email or not password:
+            return {"success": False, "error": "Email and password are required."}, 400
+        user = User.query.filter_by(email=email).first()
+        if not user or not check_password_hash(user.password_hash, password):
+            return {"success": False, "error": "Invalid email or password."}, 401
+        if not user.active:
+            return {"success": False, "error": "Your account is inactive."}, 403
+        return issue_auth_json_response(user)
+
+    @app.route("/api/register", methods=["POST"])
+    def api_register():
+        if not app.config["REGISTERABLE"]:
+            return {"success": False, "error": "Registration is disabled."}, 403
+        data = request.get_json(silent=True) or {}
+        email = str(data.get("email", "")).strip().lower()
+        password = data.get("password", "")
+        if not email or not password:
+            return {"success": False, "error": "Email and password are required."}, 400
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            return {"success": False, "error": "Email already registered."}, 409
+        user = User(
+            email=email,
+            password_hash=generate_password_hash(password),
+        )
+        from auth.models import db
+
+        db.session.add(user)
+        db.session.commit()
+        return issue_auth_json_response(user)
+
+    @app.route("/api/forgot", methods=["POST"])
+    def api_forgot_password():
+        data = request.get_json(silent=True) or {}
+        email = str(data.get("email", "")).strip().lower()
+        if not email:
+            return {"success": False, "error": "Email is required."}, 400
+        user = User.query.filter_by(email=email).first()
+        reset_link = None
+        if user:
+            reset_token = create_reset_token(user)
+            reset_link = url_for(
+                "reset_password", token=reset_token.token, _external=True
+            )
+        return {
+            "success": True,
+            "message": "If the account exists, a reset link is ready.",
+            "reset_link": reset_link,
+        }
+
+    @app.route("/api/logout", methods=["POST"])
+    def api_logout():
+        response = make_response({"success": True})
+        response.delete_cookie(app.config["AUTH_COOKIE_NAME"])
+        return response
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         form = LoginForm()
         next_url = request.args.get("next")
         error = None
+        if request.method == "GET":
+            return send_ui("index.html")
         if form.validate_on_submit():
             email = form.email.data.strip().lower()
             user = User.query.filter_by(email=email).first()
@@ -116,14 +212,7 @@ def create_app():
                 error = "Your account is inactive."
             else:
                 return issue_auth_response(user, next_url=next_url)
-        return render_template(
-            "security/login.html",
-            form=form,
-            error=error,
-            next_url=next_url,
-            registerable=app.config["REGISTERABLE"],
-            google_oauth_enabled=app.config.get("GOOGLE_OAUTH_ENABLED", False),
-        )
+        return send_ui("index.html")
 
     @app.route("/register", methods=["GET", "POST"])
     def register():
@@ -132,6 +221,8 @@ def create_app():
         form = RegisterForm()
         next_url = request.args.get("next")
         error = None
+        if request.method == "GET":
+            return send_ui("signup.html")
         if form.validate_on_submit():
             email = form.email.data.strip().lower()
             existing = User.query.filter_by(email=email).first()
@@ -147,12 +238,7 @@ def create_app():
                 db.session.add(user)
                 db.session.commit()
                 return issue_auth_response(user, next_url=next_url)
-        return render_template(
-            "security/register.html",
-            form=form,
-            error=error,
-            next_url=next_url,
-        )
+        return send_ui("signup.html")
 
     @app.route("/logout", methods=["GET"])
     def logout():
@@ -167,6 +253,8 @@ def create_app():
         next_url = request.args.get("next")
         message = None
         reset_link = None
+        if request.method == "GET":
+            return send_ui("reset-password.html")
         if form.validate_on_submit():
             email = form.email.data.strip().lower()
             user = User.query.filter_by(email=email).first()
@@ -176,13 +264,7 @@ def create_app():
                     "reset_password", token=reset_token.token, next=next_url, _external=True
                 )
             message = "If the account exists, a reset link is ready."
-        return render_template(
-            "security/forgot_password.html",
-            form=form,
-            message=message,
-            reset_link=reset_link,
-            next_url=next_url,
-        )
+        return send_ui("reset-password.html")
 
     @app.route("/reset/<token>", methods=["GET", "POST"])
     def reset_password(token):
@@ -285,6 +367,13 @@ def create_app():
             ),
             400,
         )
+
+    @app.route("/<path:filename>", methods=["GET"])
+    def ui_assets(filename):
+        ui_path = os.path.join(UI_DIR, filename)
+        if os.path.isfile(ui_path):
+            return send_ui(filename)
+        return abort(404)
 
     return app
 
