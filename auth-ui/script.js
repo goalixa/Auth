@@ -1,6 +1,8 @@
 // DOM Elements
 const themeToggle = document.getElementById('themeToggle');
 const toastContainer = document.getElementById('toastContainer');
+const BASE_PATH = window.location.pathname.startsWith('/auth') ? '/auth' : '';
+const withBase = (path) => `${BASE_PATH}${path}`;
 
 // Initialize Particles.js
 function initParticles() {
@@ -503,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 localStorage.removeItem('userData');
                 sessionStorage.removeItem('userData');
-                window.location.href = '/login';
+                window.location.href = withBase('/login');
             }
         });
     }
@@ -534,17 +536,30 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Check authentication for protected pages
     const storedUser = localStorage.getItem('userData') || sessionStorage.getItem('userData');
-    const isProtectedPage = window.location.pathname === '/dashboard';
+    const dashboardPath = withBase('/dashboard');
+    const isProtectedPage =
+        window.location.pathname === dashboardPath ||
+        window.location.pathname === `${dashboardPath}/`;
     
     if (isProtectedPage && !storedUser) {
-        window.location.href = '/login';
+        window.location.href = withBase('/login');
         showToast('Please login to access dashboard', 'warning');
     }
     
     if (!isProtectedPage && storedUser) {
-        const authPages = ['/', '/login', '/register', '/forgot', '/index.html', '/signup.html', '/reset-password.html'];
+        const authPages = [
+            BASE_PATH,
+            `${BASE_PATH}/`,
+            withBase('/'),
+            withBase('/login'),
+            withBase('/register'),
+            withBase('/forgot'),
+            withBase('/index.html'),
+            withBase('/signup.html'),
+            withBase('/reset-password.html')
+        ];
         if (authPages.includes(window.location.pathname)) {
-            window.location.href = '/dashboard';
+            window.location.href = withBase('/dashboard');
         }
     }
 });

@@ -51,7 +51,7 @@ def create_app():
     app.config["GOALIXA_APP_URL"] = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
     app.config["REGISTERABLE"] = os.getenv("REGISTERABLE", "1") == "1"
 
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     init_db(app)
     init_oauth(app)
@@ -89,6 +89,7 @@ def create_app():
             httponly=True,
             samesite="Lax",
             secure=app.config["AUTH_COOKIE_SECURE"],
+            path="/",
         )
         return response
 
@@ -107,6 +108,7 @@ def create_app():
             httponly=True,
             samesite="Lax",
             secure=app.config["AUTH_COOKIE_SECURE"],
+            path="/",
         )
         return response
 
