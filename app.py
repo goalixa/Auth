@@ -1,6 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timedelta
+from time import time
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
@@ -19,6 +20,8 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+
 from auth.forms import (
     ChangePasswordForm,
     ForgotPasswordForm,
@@ -34,6 +37,21 @@ from authlib.integrations.base_client.errors import OAuthError
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data.db")
 UI_DIR = os.path.join(BASE_DIR, "auth-ui")
+
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    ["method", "endpoint", "http_status"],
+)
+REQUEST_LATENCY = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency",
+    ["method", "endpoint"],
+)
+INPROGRESS_REQUESTS = Gauge(
+    "http_requests_inprogress",
+    "In progress HTTP requests",
+)
 
 
 def create_app():
@@ -71,6 +89,41 @@ def create_app():
         except (TypeError, ValueError):
             return
         g.current_user = User.query.get(user_id)
+
+    def _metrics_endpoint_label():
+        if request.url_rule and request.url_rule.rule:
+            return request.url_rule.rule
+        return request.path or "unknown"
+
+    @app.before_request
+    def start_metrics_timer():
+        g.metrics_skip = request.path == "/metrics"
+        if g.metrics_skip:
+            return
+        g.metrics_start = time()
+        g.metrics_inprogress = True
+        INPROGRESS_REQUESTS.inc()
+
+    @app.after_request
+    def record_metrics(response):
+        if getattr(g, "metrics_skip", False):
+            return response
+        if getattr(g, "metrics_inprogress", False):
+            INPROGRESS_REQUESTS.dec()
+            g.metrics_inprogress = False
+        endpoint = _metrics_endpoint_label()
+        REQUEST_COUNT.labels(request.method, endpoint, str(response.status_code)).inc()
+        if hasattr(g, "metrics_start"):
+            REQUEST_LATENCY.labels(request.method, endpoint).observe(
+                time() - g.metrics_start
+            )
+        return response
+
+    @app.teardown_request
+    def finalize_metrics(error=None):
+        if getattr(g, "metrics_inprogress", False):
+            INPROGRESS_REQUESTS.dec()
+            g.metrics_inprogress = False
 
     def issue_auth_response(user, next_url=None):
         token = create_token(
@@ -126,6 +179,13 @@ def create_app():
     @app.route("/health", methods=["GET"])
     def health():
         return {"status": "ok"}
+
+    @app.route("/metrics", methods=["GET"])
+    def metrics():
+        return app.response_class(
+            generate_latest(),
+            mimetype=CONTENT_TYPE_LATEST,
+        )
 
     @app.route("/", methods=["GET"])
     def ui_root():
