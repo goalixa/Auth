@@ -8,6 +8,10 @@ Standalone authentication service for Goalixa.
 python app.py
 ```
 
+## Metrics
+
+Prometheus metrics are exposed at `GET /metrics`.
+
 ## Environment variables
 
 - `AUTH_SECRET_KEY`: Flask session secret.
