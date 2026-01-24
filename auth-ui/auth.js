@@ -1,6 +1,9 @@
+const BASE_PATH = window.location.pathname.startsWith('/auth') ? '/auth' : '';
+const withBase = (path) => `${BASE_PATH}${path}`;
+
 // Authentication API Configuration
 const API_CONFIG = {
-    baseURL: '',
+    baseURL: BASE_PATH,
     endpoints: {
         login: '/api/login',
         register: '/api/register',
@@ -68,7 +71,7 @@ class AuthManager {
             
             // Redirect to dashboard
             setTimeout(() => {
-                window.location.href = '/dashboard';
+                window.location.href = withBase('/dashboard');
             }, 500);
             
             return { success: true, user };
@@ -123,7 +126,7 @@ class AuthManager {
             
             // Redirect to dashboard
             setTimeout(() => {
-                window.location.href = '/dashboard';
+                window.location.href = withBase('/dashboard');
             }, 500);
             
             return { success: true, user: newUser };
@@ -168,7 +171,7 @@ class AuthManager {
             
             // Redirect to login after delay
             setTimeout(() => {
-                window.location.href = '/login';
+                window.location.href = withBase('/login');
             }, 3000);
             
             return { success: true };
@@ -196,7 +199,7 @@ class AuthManager {
         }).catch(() => {});
         
         showToast('Logged out successfully', 'success');
-        window.location.href = '/login';
+        window.location.href = withBase('/login');
     }
     
     // Check if user is authenticated
