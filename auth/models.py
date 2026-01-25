@@ -3,9 +3,11 @@ import uuid
 from datetime import datetime, timedelta
 
 from flask_sqlalchemy import SQLAlchemy
+import logging
 
 
 db = SQLAlchemy()
+logger = logging.getLogger(__name__)
 
 
 class User(db.Model):
@@ -38,12 +40,14 @@ def create_reset_token(user, ttl_minutes=30):
     reset_token = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
     db.session.add(reset_token)
     db.session.commit()
+    logger.info("password reset token created", extra={"user_id": user.id})
     return reset_token
 
 
 def init_db(app):
     db.init_app(app)
     with app.app_context():
+        logger.info("initializing database")
         db.create_all()
         admin_email = os.getenv("ADMIN_EMAIL")
         admin_password = os.getenv("ADMIN_PASSWORD")
@@ -57,3 +61,4 @@ def init_db(app):
                 )
                 db.session.add(user)
                 db.session.commit()
+                logger.info("admin user created", extra={"email": admin_email})

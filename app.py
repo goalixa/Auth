@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -57,6 +58,9 @@ INPROGRESS_REQUESTS = Gauge(
 def create_app():
     load_dotenv()
     app = Flask(__name__)
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(level=log_level, format="%(asctime)s %(levelname)s %(message)s")
+    app.logger.setLevel(log_level)
     app.config["SECRET_KEY"] = os.getenv("AUTH_SECRET_KEY", "dev-auth-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
         "AUTH_DATABASE_URI", f"sqlite:///{DB_PATH}"
@@ -68,6 +72,14 @@ def create_app():
     app.config["AUTH_COOKIE_SECURE"] = os.getenv("AUTH_COOKIE_SECURE", "0") == "1"
     app.config["GOALIXA_APP_URL"] = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
     app.config["REGISTERABLE"] = os.getenv("REGISTERABLE", "1") == "1"
+
+    app.logger.info(
+        "app configured",
+        extra={
+            "registerable": app.config["REGISTERABLE"],
+            "cookie_secure": app.config["AUTH_COOKIE_SECURE"],
+        },
+    )
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
@@ -124,6 +136,25 @@ def create_app():
         if getattr(g, "metrics_inprogress", False):
             INPROGRESS_REQUESTS.dec()
             g.metrics_inprogress = False
+        if error:
+            app.logger.exception("request failed", extra={"path": request.path})
+
+    @app.after_request
+    def log_request(response):
+        duration_ms = None
+        if hasattr(g, "metrics_start"):
+            duration_ms = int((time() - g.metrics_start) * 1000)
+        app.logger.info(
+            "request complete",
+            extra={
+                "method": request.method,
+                "path": request.path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+                "remote_addr": request.headers.get("X-Forwarded-For", request.remote_addr),
+            },
+        )
+        return response
 
     def issue_auth_response(user, next_url=None):
         token = create_token(
@@ -131,6 +162,10 @@ def create_app():
             email=user.email,
             secret=app.config["AUTH_JWT_SECRET"],
             ttl_minutes=app.config["AUTH_JWT_TTL_MINUTES"],
+        )
+        app.logger.info(
+            "issued auth response",
+            extra={"user_id": user.id, "email": user.email, "next": next_url},
         )
         target = next_url or app.config["GOALIXA_APP_URL"]
         response = make_response(redirect(target))
@@ -147,6 +182,10 @@ def create_app():
         return response
 
     def issue_auth_json_response(user):
+        app.logger.info(
+            "issued auth json response",
+            extra={"user_id": user.id, "email": user.email},
+        )
         response = make_response({"success": True, "user": {"email": user.email}})
         max_age = app.config["AUTH_JWT_TTL_MINUTES"] * 60
         response.set_cookie(
@@ -203,25 +242,31 @@ def create_app():
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password", "")
         if not email or not password:
+            app.logger.warning("api login missing credentials")
             return {"success": False, "error": "Email and password are required."}, 400
         user = User.query.filter_by(email=email).first()
         if not user or not check_password_hash(user.password_hash, password):
+            app.logger.warning("api login invalid credentials", extra={"email": email})
             return {"success": False, "error": "Invalid email or password."}, 401
         if not user.active:
+            app.logger.warning("api login inactive user", extra={"user_id": user.id})
             return {"success": False, "error": "Your account is inactive."}, 403
         return issue_auth_json_response(user)
 
     @app.route("/api/register", methods=["POST"])
     def api_register():
         if not app.config["REGISTERABLE"]:
+            app.logger.warning("api register disabled")
             return {"success": False, "error": "Registration is disabled."}, 403
         data = request.get_json(silent=True) or {}
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password", "")
         if not email or not password:
+            app.logger.warning("api register missing credentials")
             return {"success": False, "error": "Email and password are required."}, 400
         existing = User.query.filter_by(email=email).first()
         if existing:
+            app.logger.warning("api register email exists", extra={"email": email})
             return {"success": False, "error": "Email already registered."}, 409
         user = User(
             email=email,
@@ -231,6 +276,7 @@ def create_app():
 
         db.session.add(user)
         db.session.commit()
+        app.logger.info("api register success", extra={"user_id": user.id, "email": email})
         return issue_auth_json_response(user)
 
     @app.route("/api/forgot", methods=["POST"])
@@ -238,6 +284,7 @@ def create_app():
         data = request.get_json(silent=True) or {}
         email = str(data.get("email", "")).strip().lower()
         if not email:
+            app.logger.warning("api forgot missing email")
             return {"success": False, "error": "Email is required."}, 400
         user = User.query.filter_by(email=email).first()
         reset_link = None
@@ -246,6 +293,9 @@ def create_app():
             reset_link = url_for(
                 "reset_password", token=reset_token.token, _external=True
             )
+            app.logger.info("api forgot reset issued", extra={"user_id": user.id})
+        else:
+            app.logger.info("api forgot unknown email", extra={"email": email})
         return {
             "success": True,
             "message": "If the account exists, a reset link is ready.",
@@ -254,6 +304,7 @@ def create_app():
 
     @app.route("/api/logout", methods=["POST"])
     def api_logout():
+        app.logger.info("api logout")
         response = make_response({"success": True})
         response.delete_cookie(app.config["AUTH_COOKIE_NAME"])
         return response
@@ -270,9 +321,12 @@ def create_app():
             user = User.query.filter_by(email=email).first()
             if not user or not check_password_hash(user.password_hash, form.password.data):
                 error = "Invalid email or password."
+                app.logger.warning("login invalid credentials", extra={"email": email})
             elif not user.active:
                 error = "Your account is inactive."
+                app.logger.warning("login inactive user", extra={"user_id": user.id})
             else:
+                app.logger.info("login success", extra={"user_id": user.id, "email": email})
                 return issue_auth_response(user, next_url=next_url)
         return send_ui("index.html")
 
@@ -290,6 +344,7 @@ def create_app():
             existing = User.query.filter_by(email=email).first()
             if existing:
                 error = "Email already registered."
+                app.logger.warning("register email exists", extra={"email": email})
             else:
                 user = User(
                     email=email,
@@ -299,12 +354,14 @@ def create_app():
 
                 db.session.add(user)
                 db.session.commit()
+                app.logger.info("register success", extra={"user_id": user.id, "email": email})
                 return issue_auth_response(user, next_url=next_url)
         return send_ui("signup.html")
 
     @app.route("/logout", methods=["GET"])
     def logout():
         next_url = request.args.get("next") or app.config["GOALIXA_APP_URL"]
+        app.logger.info("logout", extra={"next": next_url})
         response = make_response(redirect(next_url))
         response.delete_cookie(app.config["AUTH_COOKIE_NAME"])
         return response
@@ -325,6 +382,9 @@ def create_app():
                 reset_link = url_for(
                     "reset_password", token=reset_token.token, next=next_url, _external=True
                 )
+                app.logger.info("forgot password reset issued", extra={"user_id": user.id})
+            else:
+                app.logger.info("forgot password unknown email", extra={"email": email})
             message = "If the account exists, a reset link is ready."
         return send_ui("reset-password.html")
 
@@ -336,12 +396,16 @@ def create_app():
         error = None
         if not reset_token or not reset_token.is_valid():
             error = "Reset link is invalid or expired."
+            app.logger.warning("reset password invalid token")
         if form.validate_on_submit() and not error:
             reset_token.user.password_hash = generate_password_hash(form.password.data)
             reset_token.used_at = datetime.utcnow()
             from auth.models import db
 
             db.session.commit()
+            app.logger.info(
+                "reset password success", extra={"user_id": reset_token.user_id}
+            )
             return redirect(url_for("login", next=next_url))
         return render_template(
             "security/reset_password.html",
@@ -362,12 +426,17 @@ def create_app():
         if form.validate_on_submit():
             if not check_password_hash(g.current_user.password_hash, form.password.data):
                 error = "Current password is incorrect."
+                app.logger.warning(
+                    "change password invalid current password",
+                    extra={"user_id": g.current_user.id},
+                )
             else:
                 g.current_user.password_hash = generate_password_hash(form.new_password.data)
                 from auth.models import db
 
                 db.session.commit()
                 message = "Password updated."
+                app.logger.info("change password success", extra={"user_id": g.current_user.id})
         return render_template(
             "security/change_password.html",
             form=form,
@@ -384,6 +453,7 @@ def create_app():
         next_url = request.args.get("next")
         if next_url:
             session["oauth_next"] = next_url
+        app.logger.info("google oauth login start", extra={"next": next_url})
         redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or url_for(
             "google_callback", _external=True
         )
@@ -395,12 +465,14 @@ def create_app():
             return abort(404)
         token = oauth.google.authorize_access_token()
         if not token:
+            app.logger.warning("google oauth missing token")
             return redirect(url_for("login"))
         user_info = oauth.google.parse_id_token(token)
         if not user_info:
             user_info = oauth.google.get("userinfo").json()
         email = (user_info or {}).get("email")
         if not email:
+            app.logger.warning("google oauth missing email")
             return redirect(url_for("login"))
         email = email.strip().lower()
         user = User.query.filter_by(email=email).first()
@@ -413,11 +485,17 @@ def create_app():
 
             db.session.add(user)
             db.session.commit()
+            app.logger.info("google oauth user created", extra={"user_id": user.id})
+        app.logger.info("google oauth success", extra={"user_id": user.id, "email": email})
         next_url = session.pop("oauth_next", None)
         return issue_auth_response(user, next_url=next_url)
 
     @app.errorhandler(OAuthError)
     def handle_oauth_error(error):
+        app.logger.warning(
+            "oauth error",
+            extra={"description": getattr(error, "description", str(error))},
+        )
         return (
             render_template(
                 "error.html",
