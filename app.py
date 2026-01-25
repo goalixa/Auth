@@ -266,7 +266,7 @@ def create_app():
     def dashboard():
         if not g.current_user:
             return redirect(url_for("login"))
-        return send_ui("dashboard.html")
+        return redirect(app.config["GOALIXA_APP_URL"])
 
     @app.route("/api/login", methods=["POST"])
     def api_login():
@@ -347,6 +347,8 @@ def create_app():
         next_url = request.args.get("next")
         error = None
         if request.method == "GET":
+            if g.current_user:
+                return redirect(app.config["GOALIXA_APP_URL"])
             return send_ui("index.html")
         if form.validate_on_submit():
             email = form.email.data.strip().lower()
