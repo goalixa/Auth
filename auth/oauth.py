@@ -1,9 +1,11 @@
 import os
 
 from authlib.integrations.flask_client import OAuth
+import logging
 
 
 oauth = OAuth()
+logger = logging.getLogger(__name__)
 
 
 def init_oauth(app):
@@ -19,6 +21,8 @@ def init_oauth(app):
             client_kwargs={"scope": "openid email profile"},
         )
         app.config["GOOGLE_OAUTH_ENABLED"] = True
+        logger.info("google oauth enabled")
     else:
         app.config["GOOGLE_OAUTH_ENABLED"] = False
+        logger.info("google oauth disabled")
     return oauth
