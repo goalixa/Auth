@@ -8,6 +8,14 @@ services:
       AUTH_DATABASE_URI: "${AUTH_DATABASE_URI}"
     env_file:
       - .env
+    secrets:
+      - AUTH_DATABASE_URI
+      - AUTH_SECRET_KEY
+      - AUTH_JWT_SECRET
+      - GOOGLE_CLIENT_ID
+      - GOOGLE_CLIENT_SECRET
+      - GOOGLE_REDIRECT_URI
+      - GOALIXA_APP_URL
     volumes:
       # - auth_data:/data
       - /Users/snapp/Desktop/projects/Goalixa/data:/data
@@ -15,3 +23,19 @@ services:
 
 # volumes:
 #   auth_data:
+
+secrets:
+  AUTH_DATABASE_URI:
+    file: ./secrets/AUTH_DATABASE_URI
+  AUTH_SECRET_KEY:
+    file: ./secrets/AUTH_SECRET_KEY
+  AUTH_JWT_SECRET:
+    file: ./secrets/AUTH_JWT_SECRET
+  GOOGLE_CLIENT_ID:
+    file: ./secrets/GOOGLE_CLIENT_ID
+  GOOGLE_CLIENT_SECRET:
+    file: ./secrets/GOOGLE_CLIENT_SECRET
+  GOOGLE_REDIRECT_URI:
+    file: ./secrets/GOOGLE_REDIRECT_URI
+  GOALIXA_APP_URL:
+    file: ./secrets/GOALIXA_APP_URL

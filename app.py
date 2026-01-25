@@ -38,6 +38,26 @@ from authlib.integrations.base_client.errors import OAuthError
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data.db")
 UI_DIR = os.path.join(BASE_DIR, "auth-ui")
+SECRETS_DIR = "/run/secrets"
+
+
+def read_docker_secret(name):
+    secret_path = os.path.join(SECRETS_DIR, name)
+    try:
+        with open(secret_path, "r", encoding="utf-8") as handle:
+            return handle.read().strip()
+    except FileNotFoundError:
+        return None
+
+
+def get_config_value(env_key, default=None):
+    value = os.getenv(env_key)
+    if value:
+        return value
+    secret_value = read_docker_secret(env_key)
+    if secret_value:
+        return secret_value
+    return default
 
 REQUEST_COUNT = Counter(
     "http_requests_total",
@@ -61,16 +81,21 @@ def create_app():
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(level=log_level, format="%(asctime)s %(levelname)s %(message)s")
     app.logger.setLevel(log_level)
-    app.config["SECRET_KEY"] = os.getenv("AUTH_SECRET_KEY", "dev-auth-secret")
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
+    app.config["SECRET_KEY"] = get_config_value("AUTH_SECRET_KEY", "dev-auth-secret")
+    app.config["SQLALCHEMY_DATABASE_URI"] = get_config_value(
         "AUTH_DATABASE_URI", f"sqlite:///{DB_PATH}"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["AUTH_JWT_SECRET"] = os.getenv("AUTH_JWT_SECRET", "dev-jwt-secret")
-    app.config["AUTH_JWT_TTL_MINUTES"] = int(os.getenv("AUTH_JWT_TTL_MINUTES", "120"))
+    app.config["AUTH_JWT_SECRET"] = get_config_value("AUTH_JWT_SECRET", "dev-jwt-secret")
+    app.config["AUTH_JWT_TTL_MINUTES"] = int(get_config_value("AUTH_JWT_TTL_MINUTES", "120"))
     app.config["AUTH_COOKIE_NAME"] = os.getenv("AUTH_COOKIE_NAME", "goalixa_auth")
     app.config["AUTH_COOKIE_SECURE"] = os.getenv("AUTH_COOKIE_SECURE", "0") == "1"
-    app.config["GOALIXA_APP_URL"] = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
+    app.config["GOALIXA_APP_URL"] = get_config_value(
+        "GOALIXA_APP_URL", "http://localhost:5000"
+    )
+    app.config["GOOGLE_CLIENT_ID"] = get_config_value("GOOGLE_CLIENT_ID")
+    app.config["GOOGLE_CLIENT_SECRET"] = get_config_value("GOOGLE_CLIENT_SECRET")
+    app.config["GOOGLE_REDIRECT_URI"] = get_config_value("GOOGLE_REDIRECT_URI")
     app.config["REGISTERABLE"] = os.getenv("REGISTERABLE", "1") == "1"
 
     app.logger.info(
@@ -454,7 +479,7 @@ def create_app():
         if next_url:
             session["oauth_next"] = next_url
         app.logger.info("google oauth login start", extra={"next": next_url})
-        redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or url_for(
+        redirect_uri = app.config.get("GOOGLE_REDIRECT_URI") or url_for(
             "google_callback", _external=True
         )
         return oauth.google.authorize_redirect(redirect_uri)
