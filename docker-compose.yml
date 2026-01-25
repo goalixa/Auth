@@ -5,7 +5,9 @@ services:
       - "5001:5001"
     environment:
       PORT: "5001"
-      AUTH_DATABASE_URI: "postgresql://appuser:apppass@postgres-db:5432/authdb"
+      AUTH_DATABASE_URI: "${AUTH_DATABASE_URI}"
+    env_file:
+      - .env
     volumes:
       # - auth_data:/data
       - /Users/snapp/Desktop/projects/Goalixa/data:/data
