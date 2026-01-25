@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 def init_oauth(app):
     oauth.init_app(app)
-    client_id = os.getenv("GOOGLE_CLIENT_ID")
-    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    client_id = app.config.get("GOOGLE_CLIENT_ID") or os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = app.config.get("GOOGLE_CLIENT_SECRET") or os.getenv("GOOGLE_CLIENT_SECRET")
     if client_id and client_secret:
         oauth.register(
             name="google",
