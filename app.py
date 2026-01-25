@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from time import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from dotenv import load_dotenv
 from flask import (
@@ -89,10 +89,15 @@ def create_app():
     app.config["AUTH_JWT_SECRET"] = get_config_value("AUTH_JWT_SECRET", "dev-jwt-secret")
     app.config["AUTH_JWT_TTL_MINUTES"] = int(get_config_value("AUTH_JWT_TTL_MINUTES", "120"))
     app.config["AUTH_COOKIE_NAME"] = os.getenv("AUTH_COOKIE_NAME", "goalixa_auth")
+    goalixa_app_url = get_config_value("GOALIXA_APP_URL", "http://localhost:5000")
+    cookie_domain = get_config_value("AUTH_COOKIE_DOMAIN")
+    if cookie_domain is None:
+        host = urlparse(goalixa_app_url).hostname or ""
+        if host.endswith("goalixa.com"):
+            cookie_domain = "goalixa.com"
+    app.config["AUTH_COOKIE_DOMAIN"] = cookie_domain
     app.config["AUTH_COOKIE_SECURE"] = os.getenv("AUTH_COOKIE_SECURE", "0") == "1"
-    app.config["GOALIXA_APP_URL"] = get_config_value(
-        "GOALIXA_APP_URL", "http://localhost:5000"
-    )
+    app.config["GOALIXA_APP_URL"] = goalixa_app_url
     app.config["GOOGLE_CLIENT_ID"] = get_config_value("GOOGLE_CLIENT_ID")
     app.config["GOOGLE_CLIENT_SECRET"] = get_config_value("GOOGLE_CLIENT_SECRET")
     app.config["GOOGLE_REDIRECT_URI"] = get_config_value("GOOGLE_REDIRECT_URI")
@@ -203,6 +208,7 @@ def create_app():
             samesite="Lax",
             secure=app.config["AUTH_COOKIE_SECURE"],
             path="/",
+            domain=app.config["AUTH_COOKIE_DOMAIN"],
         )
         return response
 
@@ -226,6 +232,7 @@ def create_app():
             samesite="Lax",
             secure=app.config["AUTH_COOKIE_SECURE"],
             path="/",
+            domain=app.config["AUTH_COOKIE_DOMAIN"],
         )
         return response
 
