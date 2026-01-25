@@ -1,6 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def create_token(user_id, email, secret, ttl_minutes):
@@ -18,5 +22,6 @@ def decode_token(token, secret):
     try:
         payload = jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["exp", "sub"]})
     except jwt.PyJWTError:
+        logger.debug("jwt decode failed")
         return None
     return payload
