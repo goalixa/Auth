@@ -89,7 +89,7 @@ def create_app():
     app.config["AUTH_JWT_SECRET"] = get_config_value("AUTH_JWT_SECRET", "dev-jwt-secret")
     app.config["AUTH_JWT_TTL_MINUTES"] = int(get_config_value("AUTH_JWT_TTL_MINUTES", "120"))
     app.config["AUTH_COOKIE_NAME"] = os.getenv("AUTH_COOKIE_NAME", "goalixa_auth")
-    goalixa_app_url = get_config_value("GOALIXA_APP_URL", "http://localhost:5000")
+    goalixa_app_url = get_config_value("GOALIXA_APP_URL", "https://goalixa.com/app")
     cookie_domain = get_config_value("AUTH_COOKIE_DOMAIN")
     if cookie_domain is None:
         host = urlparse(goalixa_app_url).hostname or ""
