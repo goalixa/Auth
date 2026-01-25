@@ -1,6 +1,10 @@
 const authBasePath = window.location.pathname.startsWith('/auth') ? '/auth' : '';
 const resolveBasePath =
     window.withBase || ((path) => `${authBasePath}${path}`);
+const resolveNextParam = () => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('next');
+};
 
 // Authentication API Configuration
 const API_CONFIG = {
@@ -235,6 +239,13 @@ class AuthManager {
     // Social login methods
     async socialLogin(provider) {
         try {
+            if (provider.toLowerCase() === 'google') {
+                const next = resolveNextParam();
+                const baseUrl = resolveBasePath('/login/google');
+                const redirectUrl = next ? `${baseUrl}?next=${encodeURIComponent(next)}` : baseUrl;
+                window.location.href = redirectUrl;
+                return;
+            }
             showToast(`${provider} login is not configured yet.`, 'warning');
         } catch (error) {
             showToast(`Failed to login with ${provider}`, 'error');
