@@ -58,6 +58,20 @@ def get_config_value(env_key, default=None):
     if secret_value:
         return secret_value
     return default
+    
+
+def get_jwt_secret():
+    """
+    Resolve the JWT signing secret. Preference order:
+    1) AUTH_JWT_SECRET (env or /run/secrets)
+    2) AUTH_SECRET_KEY (env or /run/secrets) for backward compatibility
+    3) hard-coded dev fallback
+    """
+    return (
+        get_config_value("AUTH_JWT_SECRET")
+        or get_config_value("AUTH_SECRET_KEY")
+        or "dev-jwt-secret"
+    )
 
 REQUEST_COUNT = Counter(
     "http_requests_total",
@@ -86,9 +100,10 @@ def create_app():
         "AUTH_DATABASE_URI", f"sqlite:///{DB_PATH}"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["AUTH_JWT_SECRET"] = get_config_value("AUTH_JWT_SECRET", "dev-jwt-secret")
+    app.config["AUTH_JWT_SECRET"] = get_jwt_secret()
     app.config["AUTH_JWT_TTL_MINUTES"] = int(get_config_value("AUTH_JWT_TTL_MINUTES", "120"))
     app.config["AUTH_COOKIE_NAME"] = os.getenv("AUTH_COOKIE_NAME", "goalixa_auth")
+    app.config["AUTH_COOKIE_SAMESITE"] = get_config_value("AUTH_COOKIE_SAMESITE", "Lax")
     goalixa_app_url = get_config_value("GOALIXA_APP_URL", "https://goalixa.com/app")
     cookie_domain = get_config_value("AUTH_COOKIE_DOMAIN")
     if cookie_domain is None:
@@ -96,7 +111,7 @@ def create_app():
         if host.endswith("goalixa.com"):
             cookie_domain = "goalixa.com"
     app.config["AUTH_COOKIE_DOMAIN"] = cookie_domain
-    app.config["AUTH_COOKIE_SECURE"] = os.getenv("AUTH_COOKIE_SECURE", "0") == "1"
+    app.config["AUTH_COOKIE_SECURE"] = get_config_value("AUTH_COOKIE_SECURE", "0") == "1"
     app.config["GOALIXA_APP_URL"] = goalixa_app_url
     app.config["GOOGLE_CLIENT_ID"] = get_config_value("GOOGLE_CLIENT_ID")
     app.config["GOOGLE_CLIENT_SECRET"] = get_config_value("GOOGLE_CLIENT_SECRET")
@@ -205,7 +220,7 @@ def create_app():
             token,
             max_age=max_age,
             httponly=True,
-            samesite="Lax",
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
             secure=app.config["AUTH_COOKIE_SECURE"],
             path="/",
             domain=app.config["AUTH_COOKIE_DOMAIN"],
@@ -229,7 +244,7 @@ def create_app():
             ),
             max_age=max_age,
             httponly=True,
-            samesite="Lax",
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
             secure=app.config["AUTH_COOKIE_SECURE"],
             path="/",
             domain=app.config["AUTH_COOKIE_DOMAIN"],
@@ -338,7 +353,12 @@ def create_app():
     def api_logout():
         app.logger.info("api logout")
         response = make_response({"success": True})
-        response.delete_cookie(app.config["AUTH_COOKIE_NAME"])
+        response.delete_cookie(
+            app.config["AUTH_COOKIE_NAME"],
+            path="/",
+            domain=app.config["AUTH_COOKIE_DOMAIN"],
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
+        )
         return response
 
     @app.route("/login", methods=["GET", "POST"])
@@ -397,7 +417,12 @@ def create_app():
         next_url = request.args.get("next") or app.config["GOALIXA_APP_URL"]
         app.logger.info("logout", extra={"next": next_url})
         response = make_response(redirect(next_url))
-        response.delete_cookie(app.config["AUTH_COOKIE_NAME"])
+        response.delete_cookie(
+            app.config["AUTH_COOKIE_NAME"],
+            path="/",
+            domain=app.config["AUTH_COOKIE_DOMAIN"],
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
+        )
         return response
 
     @app.route("/forgot", methods=["GET", "POST"])
