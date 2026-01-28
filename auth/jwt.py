@@ -20,8 +20,12 @@ def create_token(user_id, email, secret, ttl_minutes):
 
 def decode_token(token, secret):
     try:
-        payload = jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["exp", "sub"]})
-    except jwt.PyJWTError:
-        logger.debug("jwt decode failed")
-        return None
-    return payload
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            options={"require": ["exp", "sub"]},
+        )
+        return payload, None
+    except jwt.PyJWTError as exc:
+        return None, str(exc)
