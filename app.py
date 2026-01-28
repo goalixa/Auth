@@ -131,13 +131,36 @@ def create_app():
     init_db(app)
     init_oauth(app)
 
+    def _clear_auth_cookie(response):
+        """Remove auth cookie for both configured domain and host-only to avoid sticky invalid cookies."""
+        cookie_name = app.config["AUTH_COOKIE_NAME"]
+        domains = [app.config["AUTH_COOKIE_DOMAIN"]]
+        if app.config["AUTH_COOKIE_DOMAIN"] is not None:
+            domains.append(None)  # also clear host-only variant
+        for domain in domains:
+            response.set_cookie(
+                cookie_name,
+                "",
+                max_age=0,
+                httponly=True,
+                secure=app.config["AUTH_COOKIE_SECURE"],
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                path="/",
+                domain=domain,
+            )
+        return response
+
     @app.before_request
     def load_user():
         cookie_name = app.config["AUTH_COOKIE_NAME"]
         token = request.cookies.get(cookie_name)
         g.current_user = None
+        g.clear_auth_cookie = False
         if not token:
-            app.logger.debug("auth cookie missing", extra={"cookie_name": cookie_name})
+            app.logger.info(
+                "auth cookie missing",
+                extra={"cookie_name": cookie_name, "path": request.path},
+            )
             return
         payload, err = decode_token(token, app.config["AUTH_JWT_SECRET"])
         if err:
@@ -145,32 +168,16 @@ def create_app():
                 "jwt decode failed",
                 extra={"reason": err, "path": request.path},
             )
-            resp = redirect(url_for("login"))
-            resp.set_cookie(
-                cookie_name,
-                "",
-                max_age=0,
-                httponly=True,
-                secure=app.config["AUTH_COOKIE_SECURE"],
-                samesite=app.config["AUTH_COOKIE_SAMESITE"],
-                path="/",
-                domain=app.config["AUTH_COOKIE_DOMAIN"],
-            )
-            return resp
+            g.clear_auth_cookie = True
+            if request.endpoint != "login":
+                return redirect(url_for("login"))
+            return
         if not payload or "sub" not in payload:
             app.logger.warning("jwt payload missing sub", extra={"path": request.path})
-            resp = redirect(url_for("login"))
-            resp.set_cookie(
-                cookie_name,
-                "",
-                max_age=0,
-                httponly=True,
-                secure=app.config["AUTH_COOKIE_SECURE"],
-                samesite=app.config["AUTH_COOKIE_SAMESITE"],
-                path="/",
-                domain=app.config["AUTH_COOKIE_DOMAIN"],
-            )
-            return resp
+            g.clear_auth_cookie = True
+            if request.endpoint != "login":
+                return redirect(url_for("login"))
+            return
         user_id = payload.get("sub")
         g.current_user = User.query.get(user_id)
         if not g.current_user:
@@ -178,18 +185,14 @@ def create_app():
                 "user not found for token",
                 extra={"sub": user_id, "path": request.path},
             )
-            resp = redirect(url_for("login"))
-            resp.set_cookie(
-                cookie_name,
-                "",
-                max_age=0,
-                httponly=True,
-                secure=app.config["AUTH_COOKIE_SECURE"],
-                samesite=app.config["AUTH_COOKIE_SAMESITE"],
-                path="/",
-                domain=app.config["AUTH_COOKIE_DOMAIN"],
-            )
-            return resp
+            g.clear_auth_cookie = True
+            if request.endpoint != "login":
+                return redirect(url_for("login"))
+            return
+        app.logger.info(
+            "auth user loaded",
+            extra={"user_id": g.current_user.id, "path": request.path},
+        )
 
     def _metrics_endpoint_label():
         if request.url_rule and request.url_rule.rule:
@@ -233,6 +236,8 @@ def create_app():
         duration_ms = None
         if hasattr(g, "metrics_start"):
             duration_ms = int((time() - g.metrics_start) * 1000)
+        if getattr(g, "clear_auth_cookie", False):
+            response = _clear_auth_cookie(response)
         app.logger.info(
             "request complete",
             extra={
