@@ -137,15 +137,59 @@ def create_app():
         token = request.cookies.get(cookie_name)
         g.current_user = None
         if not token:
+            app.logger.debug("auth cookie missing", extra={"cookie_name": cookie_name})
             return
-        payload = decode_token(token, app.config["AUTH_JWT_SECRET"])
-        if not payload:
-            return
-        try:
-            user_id = int(payload.get("sub"))
-        except (TypeError, ValueError):
-            return
+        payload, err = decode_token(token, app.config["AUTH_JWT_SECRET"])
+        if err:
+            app.logger.warning(
+                "jwt decode failed",
+                extra={"reason": err, "path": request.path},
+            )
+            resp = redirect(url_for("login"))
+            resp.set_cookie(
+                cookie_name,
+                "",
+                max_age=0,
+                httponly=True,
+                secure=app.config["AUTH_COOKIE_SECURE"],
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+            )
+            return resp
+        if not payload or "sub" not in payload:
+            app.logger.warning("jwt payload missing sub", extra={"path": request.path})
+            resp = redirect(url_for("login"))
+            resp.set_cookie(
+                cookie_name,
+                "",
+                max_age=0,
+                httponly=True,
+                secure=app.config["AUTH_COOKIE_SECURE"],
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+            )
+            return resp
+        user_id = payload.get("sub")
         g.current_user = User.query.get(user_id)
+        if not g.current_user:
+            app.logger.warning(
+                "user not found for token",
+                extra={"sub": user_id, "path": request.path},
+            )
+            resp = redirect(url_for("login"))
+            resp.set_cookie(
+                cookie_name,
+                "",
+                max_age=0,
+                httponly=True,
+                secure=app.config["AUTH_COOKIE_SECURE"],
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+            )
+            return resp
 
     def _metrics_endpoint_label():
         if request.url_rule and request.url_rule.rule:
