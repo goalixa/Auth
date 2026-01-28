@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from time import time
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 from dotenv import load_dotenv
 from flask import (
@@ -73,6 +73,16 @@ def get_jwt_secret():
         or "dev-jwt-secret"
     )
 
+
+def normalize_app_url(url):
+    """Ensure GOALIXA_APP_URL ends with a trailing slash to avoid path rewrite issues behind proxies."""
+    parsed = urlparse(url)
+    path = parsed.path or "/"
+    if not path.endswith("/"):
+        path = f"{path}/"
+    parsed = parsed._replace(path=path)
+    return urlunparse(parsed)
+
 REQUEST_COUNT = Counter(
     "http_requests_total",
     "Total HTTP requests",
@@ -104,7 +114,7 @@ def create_app():
     app.config["AUTH_JWT_TTL_MINUTES"] = int(get_config_value("AUTH_JWT_TTL_MINUTES", "120"))
     app.config["AUTH_COOKIE_NAME"] = os.getenv("AUTH_COOKIE_NAME", "goalixa_auth")
     app.config["AUTH_COOKIE_SAMESITE"] = get_config_value("AUTH_COOKIE_SAMESITE", "Lax")
-    goalixa_app_url = get_config_value("GOALIXA_APP_URL", "https://goalixa.com/app")
+    goalixa_app_url = normalize_app_url(get_config_value("GOALIXA_APP_URL", "https://goalixa.com/app"))
     cookie_domain = get_config_value("AUTH_COOKIE_DOMAIN")
     if cookie_domain is None:
         host = urlparse(goalixa_app_url).hostname or ""
