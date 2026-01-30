@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-config
+  namespace: goalixa-auth
+data:
+  NODE_ENV: "production"
+
+  AUTH_PUBLIC_URL: "https://REPLACE_ME_AUTH_DOMAIN"
