@@ -40,14 +40,14 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    name: Deploy to Swarm (VM)
+    name: Deploy to k3s
     needs: build-and-push
     runs-on: [self-hosted, Linux, X64]
     steps:
-      - name: Login to GHCR (for private pull)
-        run: |
-          echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Deploy stack (Swarm)
+      - name: Deploy to k3s
         run: |
-          docker stack deploy --with-registry-auth --resolve-image always -c /opt/goalixa-swarm/stack.yml goalixa
+          kubectl apply -k k8s/base
+          kubectl rollout restart deployment/auth -n goalixa-auth

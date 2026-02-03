@@ -4,6 +4,19 @@ metadata:
   name: auth-config
   namespace: goalixa-auth
 data:
-  NODE_ENV: "production"
+  # Flask configuration
+  LOG_LEVEL: "INFO"
 
-  AUTH_PUBLIC_URL: "https://REPLACE_ME_AUTH_DOMAIN"
+  # Auth service configuration
+  GOALIXA_APP_URL: "https://goalixa.com/app/"
+  AUTH_JWT_TTL_MINUTES: "120"
+  AUTH_COOKIE_NAME: "goalixa_auth"
+  AUTH_COOKIE_SAMESITE: "Lax"
+  AUTH_COOKIE_SECURE: "1"
+  AUTH_COOKIE_DOMAIN: "goalixa.com"
+
+  # Features
+  REGISTERABLE: "1"
+
+  # Server configuration
+  PORT: "5001"
