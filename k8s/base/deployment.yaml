@@ -13,41 +13,49 @@ spec:
       labels:
         app: auth
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: auth
-          image: REPLACE_ME_AUTH_IMAGE
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/goalixa/goalixa-auth:latest
+          imagePullPolicy: Always
           ports:
             - name: http
-              containerPort: REPLACE_ME_AUTH_CONTAINER_PORT
+              containerPort: 5001
 
           envFrom:
             - configMapRef:
                 name: auth-config
 
           env:
-            - name: DATABASE_URL
+            - name: AUTH_DATABASE_URI
               valueFrom:
                 secretKeyRef:
                   name: auth-secrets
-                  key: DATABASE_URL
+                  key: AUTH_DATABASE_URI
 
-            - name: JWT_SECRET
+            - name: AUTH_JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: auth-secrets
-                  key: JWT_SECRET
+                  key: AUTH_JWT_SECRET
+
+            - name: AUTH_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secrets
+                  key: AUTH_SECRET_KEY
 
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
 
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 20
