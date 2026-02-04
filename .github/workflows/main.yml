@@ -1,15 +1,16 @@
-name: Build & Push Auth Image
+name: Build Auth Image
 
 on:
   push:
     branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,29 +26,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set image name (lowercase)
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/goalixa-auth" >> $GITHUB_ENV
-
-      - name: Build and Push
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/goalixa-auth:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  deploy:
-    name: Deploy to k3s
-    needs: build-and-push
-    runs-on: [self-hosted, Linux, X64]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Deploy to k3s
-        run: |
-          kubectl apply -k k8s/base
-          kubectl rollout restart deployment/auth -n goalixa-auth
