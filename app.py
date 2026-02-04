@@ -166,6 +166,11 @@ def create_app():
         token = request.cookies.get(cookie_name)
         g.current_user = None
         g.clear_auth_cookie = False
+
+        # Skip auth check for logout endpoint - it should work even without valid token
+        if request.endpoint == "logout":
+            return
+
         if not token:
             app.logger.info(
                 "auth cookie missing",
