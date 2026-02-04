@@ -188,7 +188,14 @@ def create_app():
             if request.endpoint != "login":
                 return redirect(url_for("login"))
             return
-        user_id = payload.get("sub")
+        try:
+            user_id = int(payload.get("sub"))
+        except (TypeError, ValueError):
+            app.logger.warning("jwt sub is not a valid integer", extra={"sub": payload.get("sub"), "path": request.path})
+            g.clear_auth_cookie = True
+            if request.endpoint != "login":
+                return redirect(url_for("login"))
+            return
         g.current_user = User.query.get(user_id)
         if not g.current_user:
             app.logger.warning(
