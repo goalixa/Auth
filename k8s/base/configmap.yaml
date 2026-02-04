@@ -13,7 +13,7 @@ data:
   AUTH_COOKIE_NAME: "goalixa_auth"
   AUTH_COOKIE_SAMESITE: "Lax"
   AUTH_COOKIE_SECURE: "1"
-  AUTH_COOKIE_DOMAIN: "goalixa.com"
+  AUTH_COOKIE_DOMAIN: ".goalixa.com"
 
   # Features
   REGISTERABLE: "1"
