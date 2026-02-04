@@ -8,7 +8,7 @@ data:
   LOG_LEVEL: "INFO"
 
   # Auth service configuration
-  GOALIXA_APP_URL: "https://goalixa.com/app/"
+  GOALIXA_APP_URL: "https://app.goalixa.com/"
   AUTH_JWT_TTL_MINUTES: "120"
   AUTH_COOKIE_NAME: "goalixa_auth"
   AUTH_COOKIE_SAMESITE: "Lax"

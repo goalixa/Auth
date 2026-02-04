@@ -86,7 +86,7 @@ The `k8s/base/configmap.yaml` is pre-configured with production settings:
 
 ```yaml
 data:
-  GOALIXA_APP_URL: "https://goalixa.com/app/"
+  GOALIXA_APP_URL: "https://app.goalixa.com/"
   AUTH_COOKIE_DOMAIN: "goalixa.com"
   AUTH_COOKIE_SECURE: "1"
   REGISTERABLE: "1"
@@ -215,7 +215,7 @@ Ensure your repository has access to:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GOALIXA_APP_URL` | `https://goalixa.com/app` | Redirect URL after login |
+| `GOALIXA_APP_URL` | `https://app.goalixa.com/` | Redirect URL after login |
 | `AUTH_JWT_TTL_MINUTES` | `120` | Token lifetime |
 | `AUTH_COOKIE_NAME` | `goalixa_auth` | Cookie name |
 | `AUTH_COOKIE_SECURE` | `1` | Require HTTPS |
