@@ -547,7 +547,8 @@ def create_app():
         error = None
         if request.method == "GET":
             if g.current_user:
-                return redirect(app.config["GOALIXA_APP_URL"])
+                # Use next parameter if provided, otherwise use default app URL
+                return redirect(next_url or app.config["GOALIXA_APP_URL"])
             return send_ui("index.html")
         if form.validate_on_submit():
             email = form.email.data.strip().lower()
