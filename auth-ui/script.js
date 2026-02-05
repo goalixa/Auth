@@ -540,12 +540,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const isProtectedPage =
         window.location.pathname === dashboardPath ||
         window.location.pathname === `${dashboardPath}/`;
-    
+
     if (isProtectedPage && !storedUser) {
         window.location.href = withBase('/login');
         showToast('Please login to access dashboard', 'warning');
     }
-    
+
+    // Verify server-side authentication before redirecting to dashboard
     if (!isProtectedPage && storedUser) {
         const authPages = [
             BASE_PATH,
@@ -558,8 +559,24 @@ document.addEventListener('DOMContentLoaded', () => {
             withBase('/signup.html'),
             withBase('/reset-password.html')
         ];
+
         if (authPages.includes(window.location.pathname)) {
-            window.location.href = withBase('/dashboard');
+            // Verify with server before redirecting to prevent redirect loop
+            fetch(withBase('/api/me'))
+                .then(response => response.json())
+                .then(data => {
+                    if (data.authenticated) {
+                        window.location.href = withBase('/dashboard');
+                    } else {
+                        // Clear stale client-side data since server doesn't recognize user
+                        localStorage.removeItem('userData');
+                        sessionStorage.removeItem('userData');
+                        console.log('Cleared stale authentication data');
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to verify authentication:', error);
+                });
         }
     }
 });
