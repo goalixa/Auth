@@ -122,6 +122,10 @@ def create_app():
             cookie_domain = "goalixa.com"
     app.config["AUTH_COOKIE_DOMAIN"] = cookie_domain
     app.config["AUTH_COOKIE_SECURE"] = get_config_value("AUTH_COOKIE_SECURE", "0") == "1"
+    # Configure Flask session cookie (used for OAuth state) with same security settings
+    app.config["SESSION_COOKIE_SECURE"] = app.config["AUTH_COOKIE_SECURE"]
+    app.config["SESSION_COOKIE_SAMESITE"] = app.config["AUTH_COOKIE_SAMESITE"]
+    app.config["SESSION_COOKIE_DOMAIN"] = app.config["AUTH_COOKIE_DOMAIN"]
     app.config["GOALIXA_APP_URL"] = goalixa_app_url
     app.config["GOOGLE_CLIENT_ID"] = get_config_value("GOOGLE_CLIENT_ID")
     app.config["GOOGLE_CLIENT_SECRET"] = get_config_value("GOOGLE_CLIENT_SECRET")
