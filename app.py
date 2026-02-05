@@ -597,8 +597,11 @@ def create_app():
         if not token:
             app.logger.warning("google oauth missing token")
             return redirect(url_for("login"))
-        user_info = oauth.google.parse_id_token(token)
-        if not user_info:
+        # Try to get user info from ID token, fall back to userinfo endpoint
+        user_info = None
+        try:
+            user_info = oauth.google.parse_id_token(token)
+        except Exception:
             user_info = oauth.google.get("userinfo").json()
         email = (user_info or {}).get("email")
         if not email:
