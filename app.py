@@ -1,3 +1,5 @@
+import base64
+import json
 import logging
 import os
 import uuid
@@ -700,13 +702,16 @@ def create_app():
         if not app.config.get("GOOGLE_OAUTH_ENABLED"):
             return abort(404)
         next_url = request.args.get("next")
+        # Encode next_url in the OAuth state parameter to avoid session cookie issues
+        # Session cookies with SameSite=None may not be sent after OAuth redirect
+        state = None
         if next_url:
-            session["oauth_next"] = next_url
-        app.logger.info("google oauth login start", extra={"next": next_url})
+            state = base64.urlsafe_b64encode(json.dumps({"next": next_url}).encode()).decode()
+        app.logger.info("google oauth login start", extra={"next": next_url, "state": state})
         redirect_uri = app.config.get("GOOGLE_REDIRECT_URI") or url_for(
             "google_callback", _external=True
         )
-        return oauth.google.authorize_redirect(redirect_uri)
+        return oauth.google.authorize_redirect(redirect_uri, state=state)
 
     @app.route("/login/google/callback", methods=["GET"])
     def google_callback():
@@ -751,7 +756,18 @@ def create_app():
             db.session.commit()
             app.logger.info("google oauth user created", extra={"user_id": user.id})
         app.logger.info("google oauth success", extra={"user_id": user.id, "email": email})
-        next_url = session.pop("oauth_next", None)
+
+        # Decode next_url from OAuth state parameter (more reliable than session)
+        next_url = None
+        state = token.get("state") or request.args.get("state")
+        if state:
+            try:
+                state_data = json.loads(base64.urlsafe_b64decode(state).decode())
+                next_url = state_data.get("next")
+                app.logger.info("oauth state decoded", extra={"next": next_url})
+            except Exception as e:
+                app.logger.warning(f"failed to decode oauth state: {e}")
+
         return issue_auth_response(user, next_url=next_url)
 
     @app.errorhandler(OAuthError)
