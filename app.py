@@ -177,8 +177,17 @@ def create_app():
         g.current_user = None
         g.clear_auth_cookie = False
 
-        # Skip auth check for logout endpoint - it should work even without valid token
-        if request.endpoint == "logout":
+        # Public endpoints that don't require authentication
+        public_endpoints = {
+            "health", "metrics", "ui_root", "static",
+            "login", "register", "logout",
+            "forgot_password", "reset_password",
+            "google_login", "google_callback",
+            "api_login", "api_register", "api_forgot_password", "api_logout", "api_me",
+        }
+
+        # Skip auth check for public endpoints
+        if request.endpoint in public_endpoints:
             return
 
         if not token:
