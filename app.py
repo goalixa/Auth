@@ -436,6 +436,18 @@ def create_app():
         )
         return response
 
+    @app.route("/api/me", methods=["GET"])
+    def api_me():
+        if g.current_user:
+            return {
+                "authenticated": True,
+                "user": {
+                    "id": g.current_user.id,
+                    "email": g.current_user.email,
+                },
+            }
+        return {"authenticated": False, "user": None}
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         form = LoginForm()
