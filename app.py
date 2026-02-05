@@ -597,20 +597,32 @@ def create_app():
     def google_callback():
         if not app.config.get("GOOGLE_OAUTH_ENABLED"):
             return abort(404)
-        token = oauth.google.authorize_access_token()
+        try:
+            token = oauth.google.authorize_access_token()
+        except Exception as e:
+            app.logger.warning(f"google oauth token error: {e}")
+            return redirect(url_for("login"))
+
         if not token:
             app.logger.warning("google oauth missing token")
             return redirect(url_for("login"))
-        # Try to get user info from ID token, fall back to userinfo endpoint
-        user_info = None
-        try:
-            user_info = oauth.google.parse_id_token(token)
-        except Exception:
-            user_info = oauth.google.get("userinfo").json()
+
+        # Get user info from token
+        user_info = token.get("userinfo")
+
+        # If not in token, try userinfo endpoint
+        if not user_info:
+            try:
+                response = oauth.google.get("https://www.googleapis.com/oauth2/v3/userinfo")
+                user_info = response.json()
+            except Exception as e:
+                app.logger.warning(f"google oauth userinfo error: {e}")
+
         email = (user_info or {}).get("email")
         if not email:
             app.logger.warning("google oauth missing email")
             return redirect(url_for("login"))
+
         email = email.strip().lower()
         user = User.query.filter_by(email=email).first()
         if not user:
