@@ -342,7 +342,13 @@ def create_app():
         return response
 
     def send_ui(filename):
-        return send_from_directory(UI_DIR, filename)
+        response = send_from_directory(UI_DIR, filename)
+        # Add cache-busting headers to prevent browser caching
+        if hasattr(response, 'headers'):
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        return response
 
     def require_login(next_url=None):
         if g.current_user:
