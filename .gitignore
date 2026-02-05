@@ -1,2 +1,5 @@
 .env
 secrets/
+k8s/base/secret.yaml
+k8s/base/secret.yaml
+k8s/base/secret.yaml
