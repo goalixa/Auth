@@ -303,8 +303,79 @@ def create_app():
             extra={"user_id": user.id, "email": user.email, "next": next_url},
         )
         target = next_url or app.config["GOALIXA_APP_URL"]
-        response = make_response(redirect(target))
         max_age = app.config["AUTH_JWT_TTL_MINUTES"] * 60
+
+        # Check if target is an external URL (different domain)
+        target_domain = urlparse(target).hostname or ""
+        current_domain = request.host.split(":")[0]  # Remove port if present
+
+        # For external redirects, use JavaScript redirect to ensure cookie is set
+        if target_domain and target_domain != current_domain:
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecting...</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }}
+        .container {{
+            text-align: center;
+            padding: 2rem;
+        }}
+        .spinner {{
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }}
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <p>Redirecting you to the application...</p>
+    </div>
+    <script>
+        // Small delay to ensure cookie is set before redirect
+        setTimeout(function() {{
+            window.location.href = {repr(target)};
+        }}, 100);
+    </script>
+</body>
+</html>"""
+            response = make_response(html)
+            response.set_cookie(
+                app.config["AUTH_COOKIE_NAME"],
+                token,
+                max_age=max_age,
+                httponly=True,
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                secure=app.config["AUTH_COOKIE_SECURE"],
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+            )
+            return response
+
+        # For internal redirects, use HTTP redirect
+        response = make_response(redirect(target))
         response.set_cookie(
             app.config["AUTH_COOKIE_NAME"],
             token,
