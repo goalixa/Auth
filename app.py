@@ -309,6 +309,16 @@ def create_app():
         target_domain = urlparse(target).hostname or ""
         current_domain = request.host.split(":")[0]  # Remove port if present
 
+        app.logger.info(
+            "redirect check",
+            extra={
+                "target": target,
+                "target_domain": target_domain,
+                "current_domain": current_domain,
+                "is_external": target_domain and target_domain != current_domain,
+            },
+        )
+
         # For external redirects, use JavaScript redirect to ensure cookie is set
         if target_domain and target_domain != current_domain:
             html = f"""<!DOCTYPE html>
