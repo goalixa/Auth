@@ -70,13 +70,23 @@ class AuthManager {
 
             const user = data.user || { email };
             this.setAuthData(user, rememberMe);
-            
+
             // Show success message
             showToast('Login successful!', 'success');
-            
-            // Redirect to dashboard
+
+            // Redirect to next URL or dashboard
             setTimeout(() => {
-                window.location.href = resolveBasePath('/dashboard');
+                const next = resolveNextParam();
+                if (next && (next.startsWith('http://') || next.startsWith('https://'))) {
+                    // External URL - redirect directly
+                    window.location.href = next;
+                } else if (next) {
+                    // Internal path - use base path
+                    window.location.href = resolveBasePath(next);
+                } else {
+                    // No next URL - go to dashboard
+                    window.location.href = resolveBasePath('/dashboard');
+                }
             }, 500);
             
             return { success: true, user };
