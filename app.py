@@ -113,15 +113,21 @@ def create_app():
     app.config["AUTH_JWT_SECRET"] = get_jwt_secret()
     app.config["AUTH_JWT_TTL_MINUTES"] = int(get_config_value("AUTH_JWT_TTL_MINUTES", "120"))
     app.config["AUTH_COOKIE_NAME"] = os.getenv("AUTH_COOKIE_NAME", "goalixa_auth")
-    app.config["AUTH_COOKIE_SAMESITE"] = get_config_value("AUTH_COOKIE_SAMESITE", "Lax")
+    # Use None for SameSite to allow cookies to be sent across subdomains
+    app.config["AUTH_COOKIE_SAMESITE"] = get_config_value("AUTH_COOKIE_SAMESITE", "None")
     goalixa_app_url = normalize_app_url(get_config_value("GOALIXA_APP_URL", "https://goalixa.com/app"))
     cookie_domain = get_config_value("AUTH_COOKIE_DOMAIN")
     if cookie_domain is None:
         host = urlparse(goalixa_app_url).hostname or ""
         if host.endswith("goalixa.com"):
-            cookie_domain = "goalixa.com"
+            # Leading dot is required for cookies to work across all subdomains
+            cookie_domain = ".goalixa.com"
     app.config["AUTH_COOKIE_DOMAIN"] = cookie_domain
-    app.config["AUTH_COOKIE_SECURE"] = get_config_value("AUTH_COOKIE_SECURE", "0") == "1"
+    secure = get_config_value("AUTH_COOKIE_SECURE", "0") == "1"
+    # When SameSite=None is used, Secure must be True for modern browsers
+    if app.config["AUTH_COOKIE_SAMESITE"] in (None, "None"):
+        secure = True
+    app.config["AUTH_COOKIE_SECURE"] = secure
     # Configure Flask session cookie (used for OAuth state) with same security settings
     app.config["SESSION_COOKIE_SECURE"] = app.config["AUTH_COOKIE_SECURE"]
     app.config["SESSION_COOKIE_SAMESITE"] = app.config["AUTH_COOKIE_SAMESITE"]
