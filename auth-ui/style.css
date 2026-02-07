@@ -1,6 +1,6 @@
 :root {
-  --bg: #f4f2ee;
-  --bg-accent: #e8f4f1;
+  --bg: #f6f0e8;
+  --bg-accent: #e7f7f4;
   --surface: #ffffff;
   --surface-muted: #f8f6f3;
   --text: #1f2933;
@@ -8,6 +8,8 @@
   --border: #e4e0d9;
   --accent: #0f766e;
   --accent-dark: #0b5f58;
+  --accent-warm: #f97316;
+  --accent-warm-soft: #fff0e5;
   --accent-soft: #dff3f1;
   --danger: #b91c1c;
   --warning: #b45309;
@@ -35,7 +37,11 @@
 
 body {
   font-family: var(--font-body);
-  background: radial-gradient(circle at 20% 20%, var(--bg-accent), var(--bg) 48%, #efece6 100%);
+  background:
+    radial-gradient(700px 450px at 10% -10%, rgba(249, 115, 22, 0.18), transparent 60%),
+    radial-gradient(800px 520px at 100% 10%, rgba(15, 118, 110, 0.2), transparent 60%),
+    radial-gradient(600px 400px at 20% 90%, rgba(15, 118, 110, 0.12), transparent 60%),
+    linear-gradient(140deg, #f9f4ee 0%, var(--bg) 45%, var(--bg-accent) 100%);
   color: var(--text);
   min-height: 100vh;
   line-height: 1.6;
@@ -52,6 +58,18 @@ body::before {
   background-size: 32px 32px;
   opacity: 0.25;
   pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(420px 420px at 90% 75%, rgba(249, 115, 22, 0.16), transparent 60%),
+    radial-gradient(360px 360px at 15% 35%, rgba(15, 118, 110, 0.14), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
 }
 
 a {
@@ -85,6 +103,16 @@ a:hover {
   padding: 34px;
   box-shadow: var(--shadow-md);
   animation: rise 0.45s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-container::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(15, 118, 110, 0.12), var(--accent), var(--accent-warm));
 }
 
 .auth-header {
@@ -106,7 +134,7 @@ a:hover {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-warm));
   box-shadow: 0 0 0 6px var(--accent-soft);
 }
 
@@ -120,6 +148,29 @@ a:hover {
 .auth-header p {
   color: var(--muted);
   margin-top: 8px;
+}
+
+.detail-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-warm));
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  flex: 0 0 auto;
 }
 
 .auth-form {
@@ -239,16 +290,17 @@ a:hover {
   padding: 14px 16px;
   border: none;
   border-radius: var(--radius-md);
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-warm));
   color: #ffffff;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
+  box-shadow: 0 16px 30px rgba(15, 118, 110, 0.18);
 }
 
 .auth-button:hover {
-  background: var(--accent-dark);
+  background: linear-gradient(135deg, var(--accent-dark), #e8772e);
   transform: translateY(-1px);
 }
 
@@ -509,7 +561,7 @@ a:hover {
 
 .ghost-button:hover {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--accent-warm-soft);
   color: var(--accent-dark);
 }
 
