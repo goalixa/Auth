@@ -5,270 +5,98 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SecureAuth | Dashboard</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0f766e">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Particles Background -->
-    <div id="particles-js"></div>
-    
-    <!-- Theme Toggle -->
-    <div class="theme-toggle">
-        <button class="toggle-button" id="themeToggle">
-            <i class="fas fa-moon"></i>
-        </button>
-    </div>
-    
-    <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
-    
-    <!-- Dashboard Container -->
-    <div class="auth-wrapper">
-        <div class="glass-container" style="width: 90%; max-width: 1200px; min-height: 80vh;">
-            <!-- Dashboard Header -->
-            <div class="dashboard-header">
-                <div class="user-info">
-                    <div class="user-avatar" id="userAvatar">
-                        JD
-                    </div>
-                    <div class="user-details">
-                        <h3 id="userName">John Doe</h3>
-                        <p id="userEmail">john@example.com</p>
-                    </div>
-                    <div style="margin-left: auto;">
-                        <button class="auth-button" style="width: auto; padding: 10px 20px;" id="logoutButton">
-                            <i class="fas fa-sign-out-alt"></i> Logout
-                        </button>
-                    </div>
+
+    <main class="dashboard">
+        <header class="dashboard-top">
+            <div class="brand">
+                <span class="brand-dot"></span>
+                <span>SecureAuth</span>
+            </div>
+            <button class="ghost-button" id="logoutButton">Log out</button>
+        </header>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div class="user-avatar" id="userAvatar">JD</div>
+                <div class="user-meta">
+                    <h1 id="userName">John Doe</h1>
+                    <p id="userEmail">john@example.com</p>
                 </div>
             </div>
-            
-            <!-- Dashboard Content -->
-            <div style="padding: 40px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px;">
-                <!-- Security Card -->
-                <div class="glass-container" style="padding: 30px;">
-                    <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-shield-alt" style="color: var(--success);"></i>
-                        Security Status
-                    </h3>
-                    <div style="margin-bottom: 20px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span>Account Protection</span>
-                            <span style="color: var(--success); font-weight: 600;">Active</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: 85%"></div>
-                        </div>
-                    </div>
-                    <button class="auth-button" style="width: 100%; margin-top: 20px;">
-                        <i class="fas fa-cog"></i> Security Settings
-                    </button>
+            <div class="stat-grid">
+                <div class="stat">
+                    <div class="stat-label">Security status</div>
+                    <div class="stat-value">Active</div>
                 </div>
-                
-                <!-- Profile Card -->
-                <div class="glass-container" style="padding: 30px;">
-                    <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-user-circle" style="color: var(--primary);"></i>
-                        Profile Info
-                    </h3>
-                    <div style="margin-bottom: 20px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span>Account Type</span>
-                            <span style="color: var(--primary); font-weight: 600;">Premium</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span>Member Since</span>
-                            <span>2023</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>Last Login</span>
-                            <span>Just now</span>
-                        </div>
-                    </div>
-                    <button class="auth-button" style="width: 100%; margin-top: 20px; background: var(--gradient-secondary);">
-                        <i class="fas fa-user-edit"></i> Edit Profile
-                    </button>
+                <div class="stat">
+                    <div class="stat-label">Member since</div>
+                    <div class="stat-value">2023</div>
                 </div>
-                
-                <!-- Activity Timeline -->
-                <div class="glass-container" style="padding: 30px; grid-column: span 2;">
-                    <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-history" style="color: var(--primary);"></i>
-                        Recent Activity
-                    </h3>
-                    <div style="display: flex; flex-direction: column; gap: 15px;">
-                        <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: var(--radius-md);">
-                            <div style="width: 40px; height: 40px; background: var(--gradient-primary); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                                <i class="fas fa-sign-in-alt"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <h4 style="margin-bottom: 5px;">Successful Login</h4>
-                                <p style="color: var(--gray); font-size: 0.9rem;">Just now • From Chrome on Windows</p>
-                            </div>
-                            <div style="color: var(--success);">
-                                <i class="fas fa-check-circle"></i>
-                            </div>
-                        </div>
-                        
-                        <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: var(--radius-md);">
-                            <div style="width: 40px; height: 40px; background: var(--gradient-secondary); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                                <i class="fas fa-user-shield"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <h4 style="margin-bottom: 5px;">Password Updated</h4>
-                                <p style="color: var(--gray); font-size: 0.9rem;">2 hours ago • Password strength increased</p>
-                            </div>
-                            <div style="color: var(--warning);">
-                                <i class="fas fa-shield-alt"></i>
-                            </div>
-                        </div>
-                        
-                        <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: var(--radius-md);">
-                            <div style="width: 40px; height: 40px; background: rgba(114, 9, 183, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                                <i class="fas fa-device-mobile"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <h4 style="margin-bottom: 5px;">New Device Detected</h4>
-                                <p style="color: var(--gray); font-size: 0.9rem;">Yesterday • iPhone 14 Pro</p>
-                            </div>
-                            <div style="color: var(--accent);">
-                                <i class="fas fa-mobile-alt"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Quick Actions -->
-                <div class="glass-container" style="padding: 30px;">
-                    <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-bolt" style="color: var(--accent);"></i>
-                        Quick Actions
-                    </h3>
-                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                        <button class="auth-button" style="width: 100%; justify-content: flex-start; background: rgba(255, 255, 255, 0.05);">
-                            <i class="fas fa-key"></i> Change Password
-                        </button>
-                        <button class="auth-button" style="width: 100%; justify-content: flex-start; background: rgba(255, 255, 255, 0.05);">
-                            <i class="fas fa-envelope"></i> Update Email
-                        </button>
-                        <button class="auth-button" style="width: 100%; justify-content: flex-start; background: rgba(255, 255, 255, 0.05);">
-                            <i class="fas fa-bell"></i> Notification Settings
-                        </button>
-                        <button class="auth-button" style="width: 100%; justify-content: flex-start; background: rgba(255, 255, 255, 0.05);">
-                            <i class="fas fa-download"></i> Export Data
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Statistics -->
-                <div class="glass-container" style="padding: 30px;">
-                    <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-chart-bar" style="color: var(--success);"></i>
-                        Statistics
-                    </h3>
-                    <div style="display: flex; flex-direction: column; gap: 15px;">
-                        <div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span>Login Count</span>
-                                <span style="font-weight: 600;">247</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 70%; background: var(--gradient-primary);"></div>
-                            </div>
-                        </div>
-                        <div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span>Security Score</span>
-                                <span style="font-weight: 600;">92/100</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 92%; background: var(--gradient-secondary);"></div>
-                            </div>
-                        </div>
-                        <div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span>Active Sessions</span>
-                                <span style="font-weight: 600;">2</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 40%; background: var(--gradient-success);"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Connected Apps -->
-                <div class="glass-container" style="padding: 30px; grid-column: span 2;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h3 style="display: flex; align-items: center; gap: 10px;">
-                            <i class="fas fa-plug" style="color: var(--warning);"></i>
-                            Connected Apps
-                        </h3>
-                        <button class="auth-button" style="width: auto; padding: 8px 16px; font-size: 0.9rem;">
-                            <i class="fas fa-plus"></i> Connect New
-                        </button>
-                    </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                        <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: var(--radius-md);">
-                            <div style="width: 40px; height: 40px; background: linear-gradient(45deg, #4285F4, #34A853); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                                <i class="fab fa-google" style="color: white;"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <h4 style="margin-bottom: 5px;">Google</h4>
-                                <p style="color: var(--gray); font-size: 0.8rem;">Connected</p>
-                            </div>
-                            <div style="color: var(--success);">
-                                <i class="fas fa-check"></i>
-                            </div>
-                        </div>
-                        
-                        <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: var(--radius-md);">
-                            <div style="width: 40px; height: 40px; background: #333; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                                <i class="fab fa-github" style="color: white;"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <h4 style="margin-bottom: 5px;">GitHub</h4>
-                                <p style="color: var(--gray); font-size: 0.8rem;">Connected</p>
-                            </div>
-                            <div style="color: var(--success);">
-                                <i class="fas fa-check"></i>
-                            </div>
-                        </div>
-                        
-                        <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: var(--radius-md);">
-                            <div style="width: 40px; height: 40px; background: linear-gradient(45deg, #1DA1F2, #1DA1F2); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                                <i class="fab fa-twitter" style="color: white;"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <h4 style="margin-bottom: 5px;">Twitter</h4>
-                                <p style="color: var(--gray); font-size: 0.8rem;">Not connected</p>
-                            </div>
-                            <div style="color: var(--gray);">
-                                <i class="fas fa-times"></i>
-                            </div>
-                        </div>
-                    </div>
+                <div class="stat">
+                    <div class="stat-label">Last login</div>
+                    <div class="stat-value" id="lastLogin">Just now</div>
                 </div>
             </div>
-        </div>
-    </div>
-    
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+        </section>
+
+        <section class="panel">
+            <h2>Quick actions</h2>
+            <div class="action-grid">
+                <button class="ghost-button action-button">Change password</button>
+                <button class="ghost-button action-button">Update email</button>
+                <button class="ghost-button action-button">Manage devices</button>
+                <button class="ghost-button action-button">Security settings</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Recent activity</h2>
+            <ul class="activity-list">
+                <li class="activity-item">
+                    <div>
+                        <div class="activity-title">Successful login</div>
+                        <div class="activity-meta">Just now · Chrome on Windows</div>
+                    </div>
+                    <span class="activity-tag">OK</span>
+                </li>
+                <li class="activity-item">
+                    <div>
+                        <div class="activity-title">Password updated</div>
+                        <div class="activity-meta">2 hours ago · Strength increased</div>
+                    </div>
+                    <span class="activity-tag">Updated</span>
+                </li>
+                <li class="activity-item">
+                    <div>
+                        <div class="activity-title">New device detected</div>
+                        <div class="activity-meta">Yesterday · iPhone 14 Pro</div>
+                    </div>
+                    <span class="activity-tag">Review</span>
+                </li>
+            </ul>
+        </section>
+    </main>
+
     <script src="script.js"></script>
     <script src="auth.js"></script>
-    
+
     <script>
-        // Additional dashboard functionality
         document.addEventListener('DOMContentLoaded', function() {
-            // Update user info from localStorage
             const storedUser = localStorage.getItem('userData') || sessionStorage.getItem('userData');
             const userData = storedUser ? JSON.parse(storedUser) : null;
+
             if (userData) {
                 document.getElementById('userName').textContent = userData.name;
                 document.getElementById('userEmail').textContent = userData.email;
-                
-                // Set avatar initials
+
                 const initials = userData.name
                     .split(' ')
                     .map(n => n[0])
@@ -276,32 +104,22 @@
                     .toUpperCase();
                 document.getElementById('userAvatar').textContent = initials;
             }
-            
-            // Add floating animation to cards
-            const cards = document.querySelectorAll('.glass-container');
-            cards.forEach((card, index) => {
-                card.style.animationDelay = `${index * 0.1}s`;
-                card.classList.add('floating');
-            });
-            
-            // Quick action buttons functionality
-            document.querySelectorAll('.auth-button').forEach(button => {
+
+            const actionButtons = document.querySelectorAll('.action-button');
+            actionButtons.forEach(button => {
                 button.addEventListener('click', function(e) {
-                    if (!this.id) { // Only for non-functional buttons
-                        e.preventDefault();
-                        const text = this.textContent.trim();
-                        showToast(`${text} feature coming soon!`, 'info');
-                    }
+                    e.preventDefault();
+                    const text = this.textContent.trim();
+                    showToast(`${text} feature coming soon!`, 'info');
                 });
             });
-            
-            // Simulate real-time updates
-            setInterval(() => {
-                const loginTime = document.querySelector('.user-details p');
-                if (loginTime) {
-                    loginTime.textContent = `Last login: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
-                }
-            }, 60000); // Update every minute
+
+            const lastLogin = document.getElementById('lastLogin');
+            if (lastLogin) {
+                setInterval(() => {
+                    lastLogin.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }, 60000);
+            }
         });
     </script>
 </body>

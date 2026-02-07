@@ -1,13 +1,32 @@
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d authdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   auth:
     build: .
     ports:
       - "5001:5001"
     environment:
       PORT: "5001"
-      AUTH_DATABASE_URI: "${AUTH_DATABASE_URI}"
+      AUTH_DATABASE_URI: "postgresql://appuser:apppass@postgres:5432/authdb"
+      ADMIN_EMAIL: "admin@goalixa.local"
+      ADMIN_PASSWORD: "AdminPass123!"
     env_file:
       - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
     secrets:
       - AUTH_DATABASE_URI
       - AUTH_SECRET_KEY
@@ -21,8 +40,8 @@ services:
       - /Users/snapp/Desktop/projects/Goalixa/data:/data
     restart: unless-stopped
 
-# volumes:
-#   auth_data:
+volumes:
+  postgres_data:
 
 secrets:
   AUTH_DATABASE_URI:

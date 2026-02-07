@@ -5,202 +5,125 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SecureAuth | Sign Up</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0f766e">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Particles Background -->
-    <div id="particles-js"></div>
-    
-    <!-- Theme Toggle -->
-    <div class="theme-toggle">
-        <button class="toggle-button" id="themeToggle">
-            <i class="fas fa-moon"></i>
-        </button>
-    </div>
-
-    <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
-    
-    <!-- Auth Wrapper -->
+
     <div class="auth-wrapper">
-        <div class="auth-container glass-container">
-            <!-- Auth Header -->
-            <div class="auth-header">
-                <div class="logo">
-                    <i class="fas fa-user-plus"></i>
+        <div class="auth-container">
+            <div class="glass-container">
+                <div class="auth-header">
+                    <div class="brand">
+                        <span class="brand-dot"></span>
+                        <span>SecureAuth</span>
+                    </div>
+                    <h1>Create your account</h1>
+                    <p>Start with a secure, minimal setup.</p>
                 </div>
-                <h1>Create Account</h1>
-                <p>Join SecureAuth today</p>
-            </div>
-            
-            <!-- Progress Bar -->
-            <div class="progress-bar">
-                <div class="progress-fill" id="signupProgress" style="width: 0%"></div>
-            </div>
-            
-            <!-- Auth Form -->
-            <form class="auth-form" id="signupForm">
-                <!-- Full Name -->
-                <div class="form-group">
-                    <label class="form-label" for="fullName">
-                        <i class="fas fa-user"></i> Full Name
-                    </label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-user input-icon"></i>
-                        <input type="text" 
-                               class="form-input" 
-                               id="fullName" 
-                               placeholder="John Doe"
-                               autocomplete="name"
-                               required>
-                    </div>
-                    <div class="error-message" id="nameError">
-                        <i class="fas fa-exclamation-circle"></i>
-                        Please enter your full name
-                    </div>
-                </div>
-                
-                <!-- Email -->
-                <div class="form-group">
-                    <label class="form-label" for="signupEmail">
-                        <i class="fas fa-envelope"></i> Email Address
-                    </label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-envelope input-icon"></i>
-                        <input type="email"
-                               class="form-input"
-                               id="signupEmail"
-                               name="email"
-                               placeholder="you@example.com"
-                               autocomplete="email"
-                               required>
-                    </div>
-                    <div class="error-message" id="signupEmailError">
-                        <i class="fas fa-exclamation-circle"></i>
-                        Please enter a valid email
-                    </div>
-                </div>
-                
-                <!-- Password -->
-                <div class="form-group">
-                    <label class="form-label" for="signupPassword">
-                        <i class="fas fa-key"></i> Password
-                    </label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-lock input-icon"></i>
-                        <input type="password"
-                               class="form-input"
-                               id="signupPassword"
-                               name="password"
-                               placeholder="Create a strong password"
-                               autocomplete="new-password"
-                               required>
-                        <button type="button" class="password-toggle" id="signupPasswordToggle">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </div>
-                    
-                    <!-- Password Strength Meter -->
-                    <div class="password-strength">
-                        <div class="strength-meter">
-                            <div class="strength-segment" id="strength1"></div>
-                            <div class="strength-segment" id="strength2"></div>
-                            <div class="strength-segment" id="strength3"></div>
-                            <div class="strength-segment" id="strength4"></div>
+
+                <form class="auth-form" id="signupForm">
+                    <div class="form-group">
+                        <label class="form-label" for="fullName">Full name</label>
+                        <div class="input-wrapper">
+                            <input type="text"
+                                   class="form-input"
+                                   id="fullName"
+                                   placeholder="John Doe"
+                                   autocomplete="name"
+                                   required>
                         </div>
-                        <div class="strength-text" id="strengthText">Password strength</div>
+                        <div class="error-message" id="nameError">Please enter your full name</div>
                     </div>
-                    
-                    <div class="error-message" id="signupPasswordError">
-                        <i class="fas fa-exclamation-circle"></i>
-                        Password must be at least 8 characters
-                    </div>
-                </div>
-                
-                <!-- Confirm Password -->
-                <div class="form-group">
-                    <label class="form-label" for="confirmPassword">
-                        <i class="fas fa-key"></i> Confirm Password
-                    </label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-lock input-icon"></i>
-                        <input type="password" 
-                               class="form-input" 
-                               id="confirmPassword" 
-                               placeholder="Confirm your password"
-                               autocomplete="new-password"
-                               required>
-                        <button type="button" class="password-toggle" id="confirmPasswordToggle">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </div>
-                    <div class="error-message" id="confirmPasswordError">
-                        <i class="fas fa-exclamation-circle"></i>
-                        Passwords don't match
-                    </div>
-                </div>
-                
-                <!-- Terms & Conditions -->
-                <div class="form-group">
-                    <label class="remember-me">
-                        <div class="checkbox-wrapper">
-                            <input type="checkbox" id="terms" required>
-                            <span class="checkbox-custom"></span>
+
+                    <div class="form-group">
+                        <label class="form-label" for="signupEmail">Email</label>
+                        <div class="input-wrapper">
+                            <input type="email"
+                                   class="form-input"
+                                   id="signupEmail"
+                                   name="email"
+                                   placeholder="you@example.com"
+                                   autocomplete="email"
+                                   required>
                         </div>
-                        <span>
-                            I agree to the 
-                            <a href="#" style="color: var(--success); text-decoration: none;">
-                                Terms & Conditions
-                            </a>
-                            and 
-                            <a href="#" style="color: var(--success); text-decoration: none;">
-                                Privacy Policy
-                            </a>
-                        </span>
-                    </label>
-                    <div class="error-message" id="termsError">
-                        <i class="fas fa-exclamation-circle"></i>
-                        You must agree to the terms
+                        <div class="error-message" id="signupEmailError">Please enter a valid email</div>
                     </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="signupPassword">Password</label>
+                        <div class="input-wrapper">
+                            <input type="password"
+                                   class="form-input"
+                                   id="signupPassword"
+                                   name="password"
+                                   placeholder="Create a strong password"
+                                   autocomplete="new-password"
+                                   required>
+                            <button type="button" class="password-toggle" id="signupPasswordToggle" aria-label="Toggle password visibility">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="error-message" id="signupPasswordError">Password must be at least 8 characters</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="confirmPassword">Confirm password</label>
+                        <div class="input-wrapper">
+                            <input type="password"
+                                   class="form-input"
+                                   id="confirmPassword"
+                                   placeholder="Confirm your password"
+                                   autocomplete="new-password"
+                                   required>
+                            <button type="button" class="password-toggle" id="confirmPasswordToggle" aria-label="Toggle password visibility">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="error-message" id="confirmPasswordError">Passwords don't match</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="remember-me">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="terms" required>
+                                <span class="checkbox-custom"></span>
+                            </div>
+                            <span>
+                                I agree to the <a href="#">Terms</a> and <a href="#">Privacy Policy</a>
+                            </span>
+                        </label>
+                        <div class="error-message" id="termsError">You must agree to the terms</div>
+                    </div>
+
+                    <button type="submit" class="auth-button" id="signupButton">
+                        <span id="signupButtonText">Create Account</span>
+                    </button>
+                </form>
+
+                <div class="social-divider">
+                    <span>Or sign up with</span>
                 </div>
-                
-                <!-- Submit Button -->
-                <button type="submit" class="auth-button" id="signupButton">
-                    <span id="signupButtonText">Create Account</span>
-                </button>
-            </form>
-            
-            <!-- Social Signup -->
-            <div class="social-divider">
-                <span>Or sign up with</span>
-            </div>
-            
-            <div class="social-buttons">
-                <a href="javascript:void(0)" class="social-button google">
-                    <i class="fab fa-google"></i>
-                    Google
-                </a>
-                <a href="javascript:void(0)" class="social-button github">
-                    <i class="fab fa-github"></i>
-                    GitHub
-                </a>
-                <a href="javascript:void(0)" class="social-button twitter">
-                    <i class="fab fa-twitter"></i>
-                    Twitter
-                </a>
-            </div>
-            
-            <!-- Auth Footer -->
-            <div class="auth-footer">
-                Already have an account?
-                <a href="login">Sign in here</a>
+
+                <div class="social-buttons">
+                    <a href="javascript:void(0)" class="social-button google">
+                        <i class="fab fa-google"></i>
+                        Continue with Google
+                    </a>
+                </div>
+
+                <div class="auth-footer">
+                    Already have an account?
+                    <a href="login">Sign in here</a>
+                </div>
             </div>
         </div>
     </div>
-    
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+
     <script src="script.js"></script>
     <script src="auth.js"></script>
 </body>
