@@ -32,8 +32,21 @@ from auth.forms import (
     RegisterForm,
     ResetPasswordForm,
 )
-from auth.jwt import create_token, decode_token
-from auth.models import PasswordResetToken, User, create_reset_token, init_db
+from auth.jwt import (
+    create_access_token,
+    create_refresh_token_jwt,
+    create_refresh_token_string,
+    decode_access_token,
+    decode_refresh_token,
+)
+from auth.models import (
+    PasswordResetToken,
+    RefreshToken,
+    User,
+    create_reset_token,
+    init_db,
+    revoke_all_user_tokens,
+)
 from auth.oauth import init_oauth, oauth
 from authlib.integrations.base_client.errors import OAuthError
 
@@ -113,8 +126,19 @@ def create_app():
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["AUTH_JWT_SECRET"] = get_jwt_secret()
-    app.config["AUTH_JWT_TTL_MINUTES"] = int(get_config_value("AUTH_JWT_TTL_MINUTES", "120"))
-    app.config["AUTH_COOKIE_NAME"] = os.getenv("AUTH_COOKIE_NAME", "goalixa_auth")
+    # Dual-token authentication configuration
+    app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"] = int(
+        get_config_value("AUTH_ACCESS_TOKEN_TTL_MINUTES", "15")
+    )
+    app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"] = int(
+        get_config_value("AUTH_REFRESH_TOKEN_TTL_DAYS", "7")
+    )
+    app.config["AUTH_ACCESS_COOKIE_NAME"] = os.getenv(
+        "AUTH_ACCESS_COOKIE_NAME", "goalixa_access"
+    )
+    app.config["AUTH_REFRESH_COOKIE_NAME"] = os.getenv(
+        "AUTH_REFRESH_COOKIE_NAME", "goalixa_refresh"
+    )
     # Use None for SameSite to allow cookies to be sent across subdomains
     app.config["AUTH_COOKIE_SAMESITE"] = get_config_value("AUTH_COOKIE_SAMESITE", "None")
     goalixa_app_url = normalize_app_url(get_config_value("GOALIXA_APP_URL", "https://goalixa.com/app"))
@@ -154,88 +178,141 @@ def create_app():
     init_oauth(app)
 
     def _clear_auth_cookie(response):
-        """Remove auth cookie for both configured domain and host-only to avoid sticky invalid cookies."""
-        cookie_name = app.config["AUTH_COOKIE_NAME"]
+        """Remove auth cookies for both configured domain and host-only to avoid sticky invalid cookies."""
+        cookie_names = [
+            app.config["AUTH_ACCESS_COOKIE_NAME"],
+            app.config["AUTH_REFRESH_COOKIE_NAME"],
+        ]
         domains = [app.config["AUTH_COOKIE_DOMAIN"]]
         if app.config["AUTH_COOKIE_DOMAIN"] is not None:
             domains.append(None)  # also clear host-only variant
-        for domain in domains:
-            response.set_cookie(
-                cookie_name,
-                "",
-                max_age=0,
-                httponly=True,
-                secure=app.config["AUTH_COOKIE_SECURE"],
-                samesite=app.config["AUTH_COOKIE_SAMESITE"],
-                path="/",
-                domain=domain,
-            )
+        for cookie_name in cookie_names:
+            for domain in domains:
+                response.set_cookie(
+                    cookie_name,
+                    "",
+                    max_age=0,
+                    httponly=True,
+                    secure=app.config["AUTH_COOKIE_SECURE"],
+                    samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                    path="/",
+                    domain=domain,
+                )
         return response
 
     @app.before_request
     def load_user():
-        cookie_name = app.config["AUTH_COOKIE_NAME"]
-        token = request.cookies.get(cookie_name)
+        access_cookie_name = app.config["AUTH_ACCESS_COOKIE_NAME"]
+        refresh_cookie_name = app.config["AUTH_REFRESH_COOKIE_NAME"]
+        access_token = request.cookies.get(access_cookie_name)
+        refresh_token = request.cookies.get(refresh_cookie_name)
         g.current_user = None
         g.clear_auth_cookie = False
 
         # Public endpoints that don't require authentication
         public_endpoints = {
-            "health", "metrics", "ui_root", "static",
-            "login", "register", "logout",
-            "forgot_password", "reset_password",
-            "google_login", "google_callback",
-            "api_login", "api_register", "api_forgot_password", "api_logout", "api_me",
+            "health",
+            "metrics",
+            "ui_root",
+            "static",
+            "login",
+            "register",
+            "logout",
+            "forgot_password",
+            "reset_password",
+            "google_login",
+            "google_callback",
+            "api_login",
+            "api_register",
+            "api_forgot_password",
+            "api_logout",
+            "api_me",
+            "api_refresh",
         }
 
         # Skip auth check for public endpoints
         if request.endpoint in public_endpoints:
             return
 
-        if not token:
-            app.logger.info(
-                "auth cookie missing",
-                extra={"cookie_name": cookie_name, "path": request.path},
+        # Try to authenticate with access token first
+        if access_token:
+            payload, err = decode_access_token(
+                access_token, app.config["AUTH_JWT_SECRET"]
             )
-            return
-        payload, err = decode_token(token, app.config["AUTH_JWT_SECRET"])
-        if err:
-            app.logger.warning(
-                "jwt decode failed",
-                extra={"reason": err, "path": request.path},
+            if not err and payload and "sub" in payload:
+                try:
+                    user_id = int(payload.get("sub"))
+                except (TypeError, ValueError):
+                    app.logger.warning(
+                        "jwt sub is not a valid integer",
+                        extra={"sub": payload.get("sub"), "path": request.path},
+                    )
+                else:
+                    g.current_user = User.query.get(user_id)
+                    if g.current_user:
+                        app.logger.info(
+                            "auth user loaded via access token",
+                            extra={"user_id": g.current_user.id, "path": request.path},
+                        )
+                        return
+
+        # Access token is missing or invalid, try refresh token
+        if refresh_token:
+            payload, err = decode_refresh_token(
+                refresh_token, app.config["AUTH_JWT_SECRET"]
             )
-            g.clear_auth_cookie = True
-            if request.endpoint != "login":
-                return redirect(url_for("login"))
-            return
-        if not payload or "sub" not in payload:
-            app.logger.warning("jwt payload missing sub", extra={"path": request.path})
-            g.clear_auth_cookie = True
-            if request.endpoint != "login":
-                return redirect(url_for("login"))
-            return
-        try:
-            user_id = int(payload.get("sub"))
-        except (TypeError, ValueError):
-            app.logger.warning("jwt sub is not a valid integer", extra={"sub": payload.get("sub"), "path": request.path})
-            g.clear_auth_cookie = True
-            if request.endpoint != "login":
-                return redirect(url_for("login"))
-            return
-        g.current_user = User.query.get(user_id)
-        if not g.current_user:
-            app.logger.warning(
-                "user not found for token",
-                extra={"sub": user_id, "path": request.path},
-            )
-            g.clear_auth_cookie = True
-            if request.endpoint != "login":
-                return redirect(url_for("login"))
-            return
+            if not err and payload and "sub" in payload and "jti" in payload:
+                from auth.models import db
+
+                try:
+                    user_id = int(payload.get("sub"))
+                except (TypeError, ValueError):
+                    app.logger.warning(
+                        "refresh token sub is not a valid integer",
+                        extra={"sub": payload.get("sub"), "path": request.path},
+                    )
+                else:
+                    # Check database for token validity
+                    refresh_token_record = RefreshToken.query.filter_by(
+                        token_id=payload["jti"], user_id=user_id
+                    ).first()
+
+                    if refresh_token_record and refresh_token_record.is_valid():
+                        user = User.query.get(user_id)
+                        if user and user.active:
+                            # Auto-issue new access token
+                            new_access_token = create_access_token(
+                                user_id=user.id,
+                                email=user.email,
+                                secret=app.config["AUTH_JWT_SECRET"],
+                                ttl_minutes=app.config[
+                                    "AUTH_ACCESS_TOKEN_TTL_MINUTES"
+                                ],
+                            )
+
+                            g.current_user = user
+                            # Signal to set new access token cookie in after_request
+                            g.new_access_token = new_access_token
+
+                            app.logger.info(
+                                "auth user loaded via refresh token, access token refreshed",
+                                extra={"user_id": user.id, "path": request.path},
+                            )
+                            return
+
+        # No valid tokens found
         app.logger.info(
-            "auth user loaded",
-            extra={"user_id": g.current_user.id, "path": request.path},
+            "auth cookie missing or invalid",
+            extra={
+                "access_cookie_name": access_cookie_name,
+                "refresh_cookie_name": refresh_cookie_name,
+                "path": request.path,
+            },
         )
+        g.clear_auth_cookie = True
+        if request.endpoint != "login":
+            return redirect(url_for("login"))
+        return
 
     def _metrics_endpoint_label():
         if request.url_rule and request.url_rule.rule:
@@ -281,6 +358,18 @@ def create_app():
             duration_ms = int((time() - g.metrics_start) * 1000)
         if getattr(g, "clear_auth_cookie", False):
             response = _clear_auth_cookie(response)
+        # Set new access token cookie if it was auto-refreshed
+        if hasattr(g, "new_access_token"):
+            response.set_cookie(
+                app.config["AUTH_ACCESS_COOKIE_NAME"],
+                g.new_access_token,
+                max_age=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"] * 60,
+                httponly=True,
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                secure=app.config["AUTH_COOKIE_SECURE"],
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+            )
         app.logger.info(
             "request complete",
             extra={
@@ -288,24 +377,53 @@ def create_app():
                 "path": request.path,
                 "status": response.status_code,
                 "duration_ms": duration_ms,
-                "remote_addr": request.headers.get("X-Forwarded-For", request.remote_addr),
+                "remote_addr": request.headers.get(
+                    "X-Forwarded-For", request.remote_addr
+                ),
             },
         )
         return response
 
     def issue_auth_response(user, next_url=None):
-        token = create_token(
+        # Create access token
+        access_token = create_access_token(
             user_id=user.id,
             email=user.email,
             secret=app.config["AUTH_JWT_SECRET"],
-            ttl_minutes=app.config["AUTH_JWT_TTL_MINUTES"],
+            ttl_minutes=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"],
         )
+
+        # Create refresh token
+        from auth.models import db
+
+        refresh_token_str = create_refresh_token_string()
+        refresh_token_jwt = create_refresh_token_jwt(
+            user_id=user.id,
+            token_id=refresh_token_str,
+            secret=app.config["AUTH_JWT_SECRET"],
+            ttl_days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"],
+        )
+
+        # Store refresh token in database
+        refresh_expires = datetime.utcnow() + timedelta(
+            days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
+        )
+        refresh_token = RefreshToken(
+            token=refresh_token_str,
+            token_id=refresh_token_str,
+            user_id=user.id,
+            expires_at=refresh_expires,
+        )
+        db.session.add(refresh_token)
+        db.session.commit()
+
         app.logger.info(
-            "issued auth response",
+            "issued auth response with dual tokens",
             extra={"user_id": user.id, "email": user.email, "next": next_url},
         )
         target = next_url or app.config["GOALIXA_APP_URL"]
-        max_age = app.config["AUTH_JWT_TTL_MINUTES"] * 60
+        access_max_age = app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"] * 60
+        refresh_max_age = app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"] * 86400
 
         # Check if target is an external URL (different domain)
         target_domain = urlparse(target).hostname or ""
@@ -375,9 +493,19 @@ def create_app():
 </html>"""
             response = make_response(html)
             response.set_cookie(
-                app.config["AUTH_COOKIE_NAME"],
-                token,
-                max_age=max_age,
+                app.config["AUTH_ACCESS_COOKIE_NAME"],
+                access_token,
+                max_age=access_max_age,
+                httponly=True,
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+                secure=app.config["AUTH_COOKIE_SECURE"],
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+            )
+            response.set_cookie(
+                app.config["AUTH_REFRESH_COOKIE_NAME"],
+                refresh_token_jwt,
+                max_age=refresh_max_age,
                 httponly=True,
                 samesite=app.config["AUTH_COOKIE_SAMESITE"],
                 secure=app.config["AUTH_COOKIE_SECURE"],
@@ -389,9 +517,19 @@ def create_app():
         # For internal redirects, use HTTP redirect
         response = make_response(redirect(target))
         response.set_cookie(
-            app.config["AUTH_COOKIE_NAME"],
-            token,
-            max_age=max_age,
+            app.config["AUTH_ACCESS_COOKIE_NAME"],
+            access_token,
+            max_age=access_max_age,
+            httponly=True,
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
+            secure=app.config["AUTH_COOKIE_SECURE"],
+            path="/",
+            domain=app.config["AUTH_COOKIE_DOMAIN"],
+        )
+        response.set_cookie(
+            app.config["AUTH_REFRESH_COOKIE_NAME"],
+            refresh_token_jwt,
+            max_age=refresh_max_age,
             httponly=True,
             samesite=app.config["AUTH_COOKIE_SAMESITE"],
             secure=app.config["AUTH_COOKIE_SECURE"],
@@ -401,21 +539,60 @@ def create_app():
         return response
 
     def issue_auth_json_response(user):
+        # Create access token
+        access_token = create_access_token(
+            user_id=user.id,
+            email=user.email,
+            secret=app.config["AUTH_JWT_SECRET"],
+            ttl_minutes=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"],
+        )
+
+        # Create refresh token
+        from auth.models import db
+
+        refresh_token_str = create_refresh_token_string()
+        refresh_token_jwt = create_refresh_token_jwt(
+            user_id=user.id,
+            token_id=refresh_token_str,
+            secret=app.config["AUTH_JWT_SECRET"],
+            ttl_days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"],
+        )
+
+        # Store refresh token in database
+        refresh_expires = datetime.utcnow() + timedelta(
+            days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
+        )
+        refresh_token = RefreshToken(
+            token=refresh_token_str,
+            token_id=refresh_token_str,
+            user_id=user.id,
+            expires_at=refresh_expires,
+        )
+        db.session.add(refresh_token)
+        db.session.commit()
+
         app.logger.info(
-            "issued auth json response",
+            "issued auth json response with dual tokens",
             extra={"user_id": user.id, "email": user.email},
         )
         response = make_response({"success": True, "user": {"email": user.email}})
-        max_age = app.config["AUTH_JWT_TTL_MINUTES"] * 60
+        access_max_age = app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"] * 60
+        refresh_max_age = app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"] * 86400
+
         response.set_cookie(
-            app.config["AUTH_COOKIE_NAME"],
-            create_token(
-                user_id=user.id,
-                email=user.email,
-                secret=app.config["AUTH_JWT_SECRET"],
-                ttl_minutes=app.config["AUTH_JWT_TTL_MINUTES"],
-            ),
-            max_age=max_age,
+            app.config["AUTH_ACCESS_COOKIE_NAME"],
+            access_token,
+            max_age=access_max_age,
+            httponly=True,
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
+            secure=app.config["AUTH_COOKIE_SECURE"],
+            path="/",
+            domain=app.config["AUTH_COOKIE_DOMAIN"],
+        )
+        response.set_cookie(
+            app.config["AUTH_REFRESH_COOKIE_NAME"],
+            refresh_token_jwt,
+            max_age=refresh_max_age,
             httponly=True,
             samesite=app.config["AUTH_COOKIE_SAMESITE"],
             secure=app.config["AUTH_COOKIE_SECURE"],
@@ -530,14 +707,160 @@ def create_app():
 
     @app.route("/api/logout", methods=["POST"])
     def api_logout():
+        # Revoke refresh token if present
+        refresh_cookie_name = app.config["AUTH_REFRESH_COOKIE_NAME"]
+        refresh_token_jwt = request.cookies.get(refresh_cookie_name)
+
+        if refresh_token_jwt:
+            payload, err = decode_refresh_token(
+                refresh_token_jwt, app.config["AUTH_JWT_SECRET"]
+            )
+            if not err and payload and "jti" in payload:
+                token = RefreshToken.query.filter_by(
+                    token_id=payload["jti"]
+                ).first()
+                if token and token.is_valid():
+                    token.revoke()
+                    from auth.models import db
+
+                    db.session.commit()
+                    app.logger.info(
+                        "revoked refresh token on logout",
+                        extra={"token_id": payload["jti"]},
+                    )
+
         app.logger.info("api logout")
         response = make_response({"success": True})
-        response.delete_cookie(
-            app.config["AUTH_COOKIE_NAME"],
+        # Clear both access and refresh cookies
+        for cookie_name in [
+            app.config["AUTH_ACCESS_COOKIE_NAME"],
+            app.config["AUTH_REFRESH_COOKIE_NAME"],
+        ]:
+            response.delete_cookie(
+                cookie_name,
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+            )
+        return response
+
+    @app.route("/api/refresh", methods=["POST"])
+    def api_refresh():
+        """Exchange refresh token for new access token."""
+        refresh_cookie_name = app.config["AUTH_REFRESH_COOKIE_NAME"]
+        refresh_token_jwt = request.cookies.get(refresh_cookie_name)
+
+        if not refresh_token_jwt:
+            app.logger.warning("api refresh missing cookie")
+            return {"success": False, "error": "Refresh token not found."}, 401
+
+        # Decode refresh token JWT
+        payload, err = decode_refresh_token(
+            refresh_token_jwt, app.config["AUTH_JWT_SECRET"]
+        )
+        if err:
+            app.logger.warning("api refresh decode failed", extra={"reason": err})
+            return {"success": False, "error": "Invalid refresh token."}, 401
+
+        if not payload or "sub" not in payload or "jti" not in payload:
+            app.logger.warning("api refresh invalid payload")
+            return {"success": False, "error": "Invalid refresh token."}, 401
+
+        # Check database for token validity
+        from auth.models import db
+
+        try:
+            user_id = int(payload.get("sub"))
+        except (TypeError, ValueError):
+            app.logger.warning("api refresh invalid user_id", extra={"sub": payload.get("sub")})
+            return {"success": False, "error": "Invalid refresh token."}, 401
+
+        refresh_token = RefreshToken.query.filter_by(
+            token_id=payload["jti"], user_id=user_id
+        ).first()
+
+        if not refresh_token or not refresh_token.is_valid():
+            app.logger.warning(
+                "api refresh token invalid or revoked",
+                extra={"token_id": payload["jti"], "user_id": user_id},
+            )
+            return {"success": False, "error": "Invalid or expired refresh token."}, 401
+
+        user = User.query.get(user_id)
+        if not user or not user.active:
+            app.logger.warning(
+                "api refresh user not found or inactive",
+                extra={"user_id": user_id},
+            )
+            return {"success": False, "error": "User not found or inactive."}, 401
+
+        # Create new access token
+        access_token = create_access_token(
+            user_id=user.id,
+            email=user.email,
+            secret=app.config["AUTH_JWT_SECRET"],
+            ttl_minutes=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"],
+        )
+
+        # Rotate refresh token (issue new one, revoke old)
+        new_refresh_token_str = create_refresh_token_string()
+        new_refresh_token_jwt = create_refresh_token_jwt(
+            user_id=user.id,
+            token_id=new_refresh_token_str,
+            secret=app.config["AUTH_JWT_SECRET"],
+            ttl_days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"],
+        )
+
+        # Create new refresh token record
+        new_refresh_expires = datetime.utcnow() + timedelta(
+            days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
+        )
+        new_db_token = RefreshToken(
+            token=new_refresh_token_str,
+            token_id=new_refresh_token_str,
+            user_id=user.id,
+            expires_at=new_refresh_expires,
+        )
+        db.session.add(new_db_token)
+
+        # Revoke old refresh token
+        refresh_token.revoke()
+        refresh_token.replaced_by = new_db_token.id
+
+        db.session.commit()
+
+        app.logger.info(
+            "api refresh success",
+            extra={
+                "user_id": user.id,
+                "old_token_id": payload["jti"],
+                "new_token_id": new_refresh_token_str,
+            },
+        )
+
+        # Set new cookies
+        response = make_response({"success": True, "access_token": access_token})
+        response.set_cookie(
+            app.config["AUTH_ACCESS_COOKIE_NAME"],
+            access_token,
+            max_age=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"] * 60,
+            httponly=True,
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
+            secure=app.config["AUTH_COOKIE_SECURE"],
             path="/",
             domain=app.config["AUTH_COOKIE_DOMAIN"],
-            samesite=app.config["AUTH_COOKIE_SAMESITE"],
         )
+        response.set_cookie(
+            app.config["AUTH_REFRESH_COOKIE_NAME"],
+            new_refresh_token_jwt,
+            max_age=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"] * 86400,
+            httponly=True,
+            samesite=app.config["AUTH_COOKIE_SAMESITE"],
+            secure=app.config["AUTH_COOKIE_SECURE"],
+            path="/",
+            domain=app.config["AUTH_COOKIE_DOMAIN"],
+        )
+
         return response
 
     @app.route("/api/me", methods=["GET"])
@@ -609,12 +932,40 @@ def create_app():
         next_url = request.args.get("next") or app.config["GOALIXA_APP_URL"]
         app.logger.info("logout", extra={"next": next_url})
         response = make_response(redirect(next_url))
-        response.delete_cookie(
-            app.config["AUTH_COOKIE_NAME"],
-            path="/",
-            domain=app.config["AUTH_COOKIE_DOMAIN"],
-            samesite=app.config["AUTH_COOKIE_SAMESITE"],
-        )
+
+        # Revoke refresh token if present
+        refresh_cookie_name = app.config["AUTH_REFRESH_COOKIE_NAME"]
+        refresh_token_jwt = request.cookies.get(refresh_cookie_name)
+
+        if refresh_token_jwt:
+            payload, err = decode_refresh_token(
+                refresh_token_jwt, app.config["AUTH_JWT_SECRET"]
+            )
+            if not err and payload and "jti" in payload:
+                token = RefreshToken.query.filter_by(
+                    token_id=payload["jti"]
+                ).first()
+                if token and token.is_valid():
+                    token.revoke()
+                    from auth.models import db
+
+                    db.session.commit()
+                    app.logger.info(
+                        "revoked refresh token on logout",
+                        extra={"token_id": payload["jti"]},
+                    )
+
+        # Clear both access and refresh cookies
+        for cookie_name in [
+            app.config["AUTH_ACCESS_COOKIE_NAME"],
+            app.config["AUTH_REFRESH_COOKIE_NAME"],
+        ]:
+            response.delete_cookie(
+                cookie_name,
+                path="/",
+                domain=app.config["AUTH_COOKIE_DOMAIN"],
+                samesite=app.config["AUTH_COOKIE_SAMESITE"],
+            )
         return response
 
     @app.route("/forgot", methods=["GET", "POST"])
