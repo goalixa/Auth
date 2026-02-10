@@ -18,6 +18,8 @@ class User(db.Model):
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    refresh_tokens = db.relationship("RefreshToken", backref="user", lazy="dynamic")
+
 
 class PasswordResetToken(db.Model):
     __tablename__ = "password_reset_token"
@@ -42,6 +44,38 @@ def create_reset_token(user, ttl_minutes=30):
     db.session.commit()
     logger.info("password reset token created", extra={"user_id": user.id})
     return reset_token
+
+
+class RefreshToken(db.Model):
+    __tablename__ = "refresh_token"
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(255), unique=True, nullable=False)
+    token_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID for tracking
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    revoked_at = db.Column(db.DateTime)
+    replaced_by = db.Column(db.Integer, db.ForeignKey("refresh_token.id"))
+
+    def is_valid(self):
+        """Check if token is not expired and not revoked."""
+        return self.revoked_at is None and self.expires_at >= datetime.utcnow()
+
+    def revoke(self):
+        """Mark token as revoked."""
+        self.revoked_at = datetime.utcnow()
+
+
+def revoke_all_user_tokens(user_id):
+    """Revoke all active refresh tokens for a user."""
+    tokens = RefreshToken.query.filter_by(user_id=user_id, revoked_at=None).all()
+    for token in tokens:
+        token.revoke()
+    db.session.commit()
+    logger.info(
+        "revoked all user tokens",
+        extra={"user_id": user_id, "count": len(tokens)},
+    )
 
 
 def init_db(app):
