@@ -13,24 +13,32 @@ const API_CONFIG = {
         login: '/api/login',
         register: '/api/register',
         resetPassword: '/api/forgot',
-        logout: '/api/logout'
+        logout: '/api/logout',
+        refresh: '/api/refresh'
     },
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-    }
+    },
+    accessTokenTTL: 15 * 60 * 1000, // 15 minutes in milliseconds
+    refreshThreshold: 14 * 60 * 1000 // Refresh at 14 minutes (1 minute before expiry)
 };
 
 // Authentication Manager
 class AuthManager {
     constructor() {
         this.userKey = 'userData';
+        this.tokenRefreshKey = 'tokenRefreshTimer';
         this.init();
     }
-    
+
     init() {
         // Check for existing user data
         this.user = this.getStoredUser();
+        // Setup token refresh if user is authenticated
+        if (this.user) {
+            this.setupTokenRefresh();
+        }
     }
 
     getStoredUser() {
@@ -244,8 +252,65 @@ class AuthManager {
         this.user = null;
         localStorage.removeItem(this.userKey);
         sessionStorage.removeItem(this.userKey);
+        this.clearTokenRefresh();
     }
-    
+
+    // Token refresh methods
+    async refreshAccessToken() {
+        try {
+            const response = await fetch(
+                `${API_CONFIG.baseURL}${API_CONFIG.endpoints.refresh}`,
+                {
+                    method: 'POST',
+                    headers: API_CONFIG.headers,
+                    credentials: 'include' // Include cookies
+                }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Failed to refresh token');
+            }
+            // Reset the refresh timer after successful refresh
+            this.setupTokenRefresh();
+            return { success: true, access_token: data.access_token };
+        } catch (error) {
+            console.error('Token refresh failed:', error);
+            // If refresh fails, user needs to re-login
+            this.clearAuthData();
+            return { success: false, error: error.message };
+        }
+    }
+
+    setupTokenRefresh() {
+        // Clear any existing timer
+        this.clearTokenRefresh();
+
+        // Set up timer to refresh token before expiry
+        const refreshDelay = API_CONFIG.accessTokenTTL - (60 * 1000); // Refresh 1 minute before expiry
+
+        const timerId = setTimeout(async () => {
+            const result = await this.refreshAccessToken();
+            if (!result.success) {
+                // Redirect to login if refresh failed
+                showToast('Session expired. Please login again.', 'error');
+                setTimeout(() => {
+                    window.location.href = resolveBasePath('/login');
+                }, 2000);
+            }
+        }, refreshDelay);
+
+        // Store timer ID for cleanup
+        localStorage.setItem(this.tokenRefreshKey, timerId.toString());
+    }
+
+    clearTokenRefresh() {
+        const timerId = localStorage.getItem(this.tokenRefreshKey);
+        if (timerId) {
+            clearTimeout(parseInt(timerId, 10));
+            localStorage.removeItem(this.tokenRefreshKey);
+        }
+    }
+
     // Social login methods
     async socialLogin(provider) {
         try {
@@ -265,6 +330,25 @@ class AuthManager {
 
 // Initialize Auth Manager
 const authManager = new AuthManager();
+
+// Fetch interceptor for auto-refresh on 401
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    const response = await originalFetch(...args);
+
+    // If response is 401 Unauthorized, try to refresh token
+    if (response.status === 401 && authManager.isAuthenticated()) {
+        const refreshResult = await authManager.refreshAccessToken();
+
+        // If refresh successful, retry the original request
+        if (refreshResult.success) {
+            // Retry the original request with updated cookies
+            return originalFetch(...args);
+        }
+    }
+
+    return response;
+};
 
 // Form Submission Handlers
 document.addEventListener('DOMContentLoaded', () => {
