@@ -139,8 +139,9 @@ def create_app():
     app.config["AUTH_REFRESH_COOKIE_NAME"] = os.getenv(
         "AUTH_REFRESH_COOKIE_NAME", "goalixa_refresh"
     )
-    # Use None for SameSite to allow cookies to be sent across subdomains
-    samesite_config = get_config_value("AUTH_COOKIE_SAMESITE", "None")
+    # Use Lax for SameSite for better browser compatibility
+    # Can be overridden to "None" for cross-site cookie scenarios
+    samesite_config = get_config_value("AUTH_COOKIE_SAMESITE", "Lax")
     # Convert string "None" to Python None for Flask's set_cookie()
     # Flask needs None (not "None") to set SameSite=None correctly
     app.config["AUTH_COOKIE_SAMESITE"] = None if samesite_config == "None" else samesite_config
@@ -152,7 +153,8 @@ def create_app():
             # Leading dot is required for cookies to work across all subdomains
             cookie_domain = ".goalixa.com"
     app.config["AUTH_COOKIE_DOMAIN"] = cookie_domain
-    secure = get_config_value("AUTH_COOKIE_SECURE", "0") == "1"
+    # Default to True for secure cookies in production
+    secure = get_config_value("AUTH_COOKIE_SECURE", "1") == "1"
     # When SameSite=None is used, Secure must be True for modern browsers
     if app.config["AUTH_COOKIE_SAMESITE"] is None:
         secure = True
