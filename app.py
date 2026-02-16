@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from time import time
 from urllib.parse import urlencode, urlparse, urlunparse
 
@@ -410,7 +410,7 @@ def create_app():
         )
 
         # Store refresh token in database
-        refresh_expires = datetime.utcnow() + timedelta(
+        refresh_expires = datetime.now(timezone.utc) + timedelta(
             days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
         )
         refresh_token = RefreshToken(
@@ -564,7 +564,7 @@ def create_app():
         )
 
         # Store refresh token in database
-        refresh_expires = datetime.utcnow() + timedelta(
+        refresh_expires = datetime.now(timezone.utc) + timedelta(
             days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
         )
         refresh_token = RefreshToken(
@@ -817,7 +817,7 @@ def create_app():
         )
 
         # Create new refresh token record
-        new_refresh_expires = datetime.utcnow() + timedelta(
+        new_refresh_expires = datetime.now(timezone.utc) + timedelta(
             days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
         )
         new_db_token = RefreshToken(
@@ -1006,7 +1006,7 @@ def create_app():
             app.logger.warning("reset password invalid token")
         if form.validate_on_submit() and not error:
             reset_token.user.password_hash = generate_password_hash(form.password.data)
-            reset_token.used_at = datetime.utcnow()
+            reset_token.used_at = datetime.now(timezone.utc)
             from auth.models import db
 
             db.session.commit()
