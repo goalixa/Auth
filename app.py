@@ -219,6 +219,7 @@ def create_app():
             "health",
             "metrics",
             "ui_root",
+            "ui_assets",  # Serves static files (style.css, script.js, etc.)
             "static",
             "login",
             "register",
