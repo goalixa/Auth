@@ -14,7 +14,7 @@ spec:
         app: auth
     spec:
       imagePullSecrets:
-        - name: ghcr-pull
+        - name: harbor-pull
       containers:
         - name: auth
           image: ghcr.io/goalixa/goalixa-auth:latest

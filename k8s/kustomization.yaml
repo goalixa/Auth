@@ -9,7 +9,7 @@ resources:
   - ingress.yaml
 
 images:
-  - name: ghcr.io/goalixa/auth
+  - name: ghcr.io/goalixa/goalixa-auth
     newName: harbor.goalixa.com/goalixa-auth/auth
     newTag: latest  # Change this to specific commit SHA for each deployment
 
