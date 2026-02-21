@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-config
+  namespace: goalixa-auth
+data:
+  # Flask configuration
+  LOG_LEVEL: "INFO"
+
+  # Auth service configuration
+  GOALIXA_APP_URL: "https://app.goalixa.com"
+  # Legacy single-token TTL (deprecated, kept for backward compatibility)
+  AUTH_JWT_TTL_MINUTES: "120"
+  AUTH_COOKIE_NAME: "goalixa_auth"
+  # Dual-token authentication configuration
+  AUTH_ACCESS_TOKEN_TTL_MINUTES: "15"
+  AUTH_REFRESH_TOKEN_TTL_DAYS: "7"
+  AUTH_ACCESS_COOKIE_NAME: "goalixa_access"
+  AUTH_REFRESH_COOKIE_NAME: "goalixa_refresh"
+  # Use Lax for same-site subdomain compatibility (auth.goalixa.com and app.goalixa.com are same-site)
+  AUTH_COOKIE_SAMESITE: "Lax"
+  AUTH_COOKIE_SECURE: "1"
+  # Domain cookie allows sharing across subdomains
+  AUTH_COOKIE_DOMAIN: ".goalixa.com"
+
+  # Features
+  REGISTERABLE: "1"
+
+  # Server configuration
+  PORT: "5001"
+  FORCE_SSL: "true"
+  PREFERRED_URL_SCHEME: "https"
