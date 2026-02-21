@@ -232,7 +232,6 @@ def create_app():
             "api_register",
             "api_forgot_password",
             "api_logout",
-            "api_me",
             "api_refresh",
         }
 
@@ -316,6 +315,8 @@ def create_app():
             },
         )
         g.clear_auth_cookie = True
+        if request.endpoint and request.endpoint.startswith("api_"):
+            return
         if request.endpoint != "login":
             return redirect(url_for("login"))
         return
