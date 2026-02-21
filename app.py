@@ -711,6 +711,39 @@ def create_app():
             "reset_link": reset_link,
         }
 
+    @app.route("/api/password-reset/request", methods=["POST"])
+    def api_password_reset_request():
+        """Alias endpoint used by PWA for password-reset request flow."""
+        return api_forgot_password()
+
+    @app.route("/api/password-reset/confirm", methods=["POST"])
+    @app.route("/api/reset", methods=["POST"])
+    def api_password_reset_confirm():
+        """Confirm password reset with token + new password."""
+        data = request.get_json(silent=True) or {}
+        token = str(data.get("token", "")).strip()
+        password = data.get("password", "")
+
+        if not token or not password:
+            app.logger.warning("api password reset confirm missing fields")
+            return {"success": False, "error": "Token and password are required."}, 400
+
+        reset_token = PasswordResetToken.query.filter_by(token=token).first()
+        if not reset_token or not reset_token.is_valid():
+            app.logger.warning("api password reset confirm invalid token")
+            return {"success": False, "error": "Reset link is invalid or expired."}, 400
+
+        reset_token.user.password_hash = generate_password_hash(password)
+        reset_token.used_at = datetime.now(timezone.utc)
+        from auth.models import db
+
+        db.session.commit()
+        app.logger.info(
+            "api password reset confirm success",
+            extra={"user_id": reset_token.user_id},
+        )
+        return {"success": True, "message": "Password has been reset."}
+
     @app.route("/api/logout", methods=["POST"])
     def api_logout():
         # Revoke refresh token if present
