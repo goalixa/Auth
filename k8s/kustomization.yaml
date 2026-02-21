@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secret.yaml
   - pvc.yaml
   - deployment.yaml
   - service.yaml
@@ -13,3 +12,11 @@ images:
   - name: ghcr.io/goalixa/auth
     newName: harbor.goalixa.com/goalixa-auth/auth
     newTag: latest  # Change this to specific commit SHA for each deployment
+
+# Secret is managed separately - create using kubectl create secret generic
+generators:
+  - name: auth-secrets
+    literals:
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
