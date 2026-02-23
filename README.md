@@ -27,6 +27,12 @@ Prometheus metrics are exposed at `GET /metrics`.
 - `AUTH_COOKIE_SECURE`: Set to `1` to require HTTPS cookies (auto-enabled with `SameSite=None`).
 - `AUTH_COOKIE_SAMESITE`: Cookie SameSite attribute (default: `Lax`; set to `None` for cross-domain).
 - `AUTH_COOKIE_DOMAIN`: Cookie domain (optional).
+- `GOOGLE_CLIENT_ID`: Google OAuth client ID.
+- `GOOGLE_CLIENT_SECRET`: Google OAuth client secret.
+- `GOOGLE_REDIRECT_URI`: Google OAuth redirect URI (optional; defaults to `/api/oauth/google/callback`).
+- `AUTH_OAUTH_RETURN_TO_DEFAULT`: Default PWA URL to redirect after OAuth (fallback: `GOALIXA_APP_URL`).
+- `AUTH_OAUTH_RETURN_TO_ALLOWLIST`: Comma-separated allowed OAuth return origins.
+- `GOALIXA_APP_URL`: Backward-compatible fallback for OAuth return URL.
 - `REGISTERABLE`: Set to `0` to disable registration (default: `1`).
 - `ADMIN_EMAIL`: Bootstrap admin user email.
 - `ADMIN_PASSWORD`: Bootstrap admin user password.
@@ -41,7 +47,7 @@ This service implements a dual-token authentication system for enhanced security
 
 ### Token Flow
 
-1. User logs in via `/api/login` or `/api/register`
+1. User logs in via `/api/login`, `/api/register`, or Google OAuth (`/api/oauth/google/start`)
 2. Service issues both access and refresh tokens as HTTP-only cookies
 3. Access token is used for authentication
 4. When access token expires, clients call `/api/refresh` to get a new access token
@@ -63,6 +69,8 @@ This service implements a dual-token authentication system for enhanced security
 | `/metrics` | GET | Prometheus metrics |
 | `/api/login` | POST | JSON login, issue dual tokens |
 | `/api/register` | POST | JSON registration, issue dual tokens |
+| `/api/oauth/google/start` | GET | Start Google OAuth redirect flow (`?return_to=...`) |
+| `/api/oauth/google/callback` | GET | OAuth callback, issue dual tokens, redirect to `return_to` |
 | `/api/forgot` | POST | Start password reset flow (returns reset token when account exists) |
 | `/api/password-reset/request` | POST | Alias of `/api/forgot` |
 | `/api/password-reset/confirm` | POST | Confirm password reset |

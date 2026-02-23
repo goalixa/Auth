@@ -1,14 +1,20 @@
+import base64
+import json
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from time import time
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from dotenv import load_dotenv
 from flask import (
     Flask,
     g,
     make_response,
+    redirect,
     request,
+    url_for,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -29,6 +35,7 @@ from auth.models import (
     create_reset_token,
     init_db,
 )
+from auth.oauth import init_oauth, oauth
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data.db")
@@ -66,6 +73,60 @@ def get_jwt_secret():
         or get_config_value("AUTH_SECRET_KEY")
         or "dev-jwt-secret"
     )
+
+
+def normalize_origin(value):
+    """Normalize a URL/origin to scheme://netloc for allow-list checks."""
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def parse_allowed_origins(raw_allowlist, default_return_to):
+    allowed = set()
+    for item in (raw_allowlist or "").split(","):
+        origin = normalize_origin(item)
+        if origin:
+            allowed.add(origin)
+    default_origin = normalize_origin(default_return_to)
+    if default_origin:
+        allowed.add(default_origin)
+    return sorted(allowed)
+
+
+def encode_oauth_state(payload):
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
+
+def decode_oauth_state(state):
+    if not state:
+        return {}
+    try:
+        padding = "=" * (-len(state) % 4)
+        decoded = base64.urlsafe_b64decode(f"{state}{padding}".encode("utf-8"))
+        payload = json.loads(decoded.decode("utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except (ValueError, TypeError):
+        return {}
+    return {}
+
+
+def append_query_params(url, extra_params):
+    """Append query parameters to a URL while preserving existing params."""
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in extra_params.items():
+        if value is not None:
+            query[key] = str(value)
+    return urlunparse(parsed._replace(query=urlencode(query)))
 
 REQUEST_COUNT = Counter(
     "http_requests_total",
@@ -122,18 +183,37 @@ def create_app():
         secure = True
     app.config["AUTH_COOKIE_SECURE"] = secure
     app.config["REGISTERABLE"] = os.getenv("REGISTERABLE", "1") == "1"
+    app.config["GOOGLE_CLIENT_ID"] = get_config_value("GOOGLE_CLIENT_ID")
+    app.config["GOOGLE_CLIENT_SECRET"] = get_config_value("GOOGLE_CLIENT_SECRET")
+    app.config["GOOGLE_REDIRECT_URI"] = get_config_value("GOOGLE_REDIRECT_URI")
+    app.config["AUTH_OAUTH_RETURN_TO_DEFAULT"] = (
+        get_config_value("AUTH_OAUTH_RETURN_TO_DEFAULT")
+        or get_config_value("GOALIXA_APP_URL")
+    )
+    app.config["AUTH_OAUTH_RETURN_TO_ALLOWED_ORIGINS"] = parse_allowed_origins(
+        get_config_value("AUTH_OAUTH_RETURN_TO_ALLOWLIST", ""),
+        app.config["AUTH_OAUTH_RETURN_TO_DEFAULT"],
+    )
+    # Authlib stores OAuth state in Flask session for callback validation.
+    app.config["SESSION_COOKIE_SECURE"] = app.config["AUTH_COOKIE_SECURE"]
+    app.config["SESSION_COOKIE_SAMESITE"] = app.config["AUTH_COOKIE_SAMESITE"]
+    app.config["SESSION_COOKIE_DOMAIN"] = app.config["AUTH_COOKIE_DOMAIN"]
 
     app.logger.info(
         "app configured",
         extra={
             "registerable": app.config["REGISTERABLE"],
             "cookie_secure": app.config["AUTH_COOKIE_SECURE"],
+            "google_oauth_enabled": bool(
+                app.config["GOOGLE_CLIENT_ID"] and app.config["GOOGLE_CLIENT_SECRET"]
+            ),
         },
     )
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     init_db(app)
+    init_oauth(app)
 
     def _clear_auth_cookie(response):
         """Remove auth cookies for both configured domain and host-only to avoid sticky invalid cookies."""
@@ -180,6 +260,8 @@ def create_app():
             "api_password_reset_confirm",
             "api_logout",
             "api_refresh",
+            "api_google_oauth_start",
+            "api_google_oauth_callback",
         }
 
         # Skip auth check for public endpoints
@@ -336,7 +418,7 @@ def create_app():
         )
         return response
 
-    def issue_auth_json_response(user):
+    def create_auth_tokens(user):
         # Create access token
         access_token = create_access_token(
             user_id=user.id,
@@ -369,11 +451,9 @@ def create_app():
         db.session.add(refresh_token)
         db.session.commit()
 
-        app.logger.info(
-            "issued auth json response with dual tokens",
-            extra={"user_id": user.id, "email": user.email},
-        )
-        response = make_response({"success": True, "user": {"email": user.email}})
+        return access_token, refresh_token_jwt
+
+    def set_auth_cookies(response, access_token, refresh_token_jwt):
         access_max_age = app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"] * 60
         refresh_max_age = app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"] * 86400
 
@@ -399,6 +479,45 @@ def create_app():
         )
         return response
 
+    def issue_auth_json_response(user):
+        access_token, refresh_token_jwt = create_auth_tokens(user)
+        app.logger.info(
+            "issued auth json response with dual tokens",
+            extra={"user_id": user.id, "email": user.email},
+        )
+        response = make_response({"success": True, "user": {"email": user.email}})
+        return set_auth_cookies(response, access_token, refresh_token_jwt)
+
+    def issue_auth_redirect_response(user, return_to):
+        access_token, refresh_token_jwt = create_auth_tokens(user)
+        app.logger.info(
+            "issued auth redirect response with dual tokens",
+            extra={"user_id": user.id, "email": user.email, "return_to": return_to},
+        )
+        response = make_response(redirect(return_to))
+        return set_auth_cookies(response, access_token, refresh_token_jwt)
+
+    def is_allowed_return_to(return_to):
+        if not return_to:
+            return False
+        parsed = urlparse(return_to)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+        origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+        allowed = app.config.get("AUTH_OAUTH_RETURN_TO_ALLOWED_ORIGINS", [])
+        return origin in set(allowed)
+
+    def resolve_return_to(candidate):
+        requested = (candidate or "").strip()
+        if requested:
+            if is_allowed_return_to(requested):
+                return requested
+            return None
+        default_return_to = app.config.get("AUTH_OAUTH_RETURN_TO_DEFAULT")
+        if default_return_to and is_allowed_return_to(default_return_to):
+            return default_return_to
+        return None
+
     @app.route("/health", methods=["GET"])
     def health():
         return {"status": "ok"}
@@ -413,6 +532,111 @@ def create_app():
     @app.route("/", methods=["GET"])
     def root():
         return {"service": "goalixa-auth", "status": "ok"}
+
+    @app.route("/api/oauth/google/start", methods=["GET"])
+    def api_google_oauth_start():
+        if not app.config.get("GOOGLE_OAUTH_ENABLED"):
+            return {"success": False, "error": "Google OAuth is not configured."}, 503
+
+        return_to = resolve_return_to(
+            request.args.get("return_to") or request.args.get("next")
+        )
+        if not return_to:
+            return {
+                "success": False,
+                "error": "Invalid or missing return_to URL.",
+                "allowed_origins": app.config["AUTH_OAUTH_RETURN_TO_ALLOWED_ORIGINS"],
+            }, 400
+
+        state = encode_oauth_state({"return_to": return_to})
+        redirect_uri = app.config.get("GOOGLE_REDIRECT_URI") or url_for(
+            "api_google_oauth_callback", _external=True
+        )
+        app.logger.info(
+            "google oauth start",
+            extra={"return_to": return_to, "redirect_uri": redirect_uri},
+        )
+        return oauth.google.authorize_redirect(redirect_uri, state=state)
+
+    @app.route("/api/oauth/google/callback", methods=["GET"])
+    def api_google_oauth_callback():
+        if not app.config.get("GOOGLE_OAUTH_ENABLED"):
+            return {"success": False, "error": "Google OAuth is not configured."}, 503
+
+        state_payload = decode_oauth_state(request.args.get("state"))
+        return_to = resolve_return_to(state_payload.get("return_to"))
+        if not return_to:
+            return {
+                "success": False,
+                "error": "Invalid OAuth return_to state.",
+            }, 400
+
+        if request.args.get("error"):
+            app.logger.warning(
+                "google oauth callback error",
+                extra={
+                    "error": request.args.get("error"),
+                    "error_description": request.args.get("error_description"),
+                },
+            )
+            return redirect(
+                append_query_params(
+                    return_to,
+                    {"auth_error": request.args.get("error", "google_oauth_error")},
+                )
+            )
+
+        try:
+            token = oauth.google.authorize_access_token()
+        except Exception as exc:  # pragma: no cover - runtime/provider dependent
+            app.logger.warning("google oauth token exchange failed", extra={"error": str(exc)})
+            return redirect(
+                append_query_params(return_to, {"auth_error": "google_token_exchange_failed"})
+            )
+
+        user_info = token.get("userinfo") if token else None
+        if not user_info:
+            try:
+                user_info = oauth.google.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo"
+                ).json()
+            except Exception as exc:  # pragma: no cover - runtime/provider dependent
+                app.logger.warning("google oauth userinfo request failed", extra={"error": str(exc)})
+                return redirect(
+                    append_query_params(return_to, {"auth_error": "google_userinfo_failed"})
+                )
+
+        email = str((user_info or {}).get("email", "")).strip().lower()
+        email_verified = bool((user_info or {}).get("email_verified", False))
+        if not email or not email_verified:
+            app.logger.warning(
+                "google oauth invalid email payload",
+                extra={"email": email, "email_verified": email_verified},
+            )
+            return redirect(
+                append_query_params(return_to, {"auth_error": "google_email_not_verified"})
+            )
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            user = User(
+                email=email,
+                password_hash=generate_password_hash(uuid.uuid4().hex),
+            )
+            from auth.models import db
+
+            db.session.add(user)
+            db.session.commit()
+            app.logger.info("google oauth user created", extra={"user_id": user.id, "email": email})
+
+        if not user.active:
+            app.logger.warning("google oauth inactive user", extra={"user_id": user.id})
+            return redirect(
+                append_query_params(return_to, {"auth_error": "account_inactive"})
+            )
+
+        app.logger.info("google oauth success", extra={"user_id": user.id, "email": email})
+        return issue_auth_redirect_response(user, return_to)
 
     @app.route("/api/login", methods=["POST"])
     def api_login():

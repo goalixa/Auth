@@ -1,17 +1,19 @@
 # Goalixa Auth Repository
 
 ## Purpose
-Standalone authentication service with dual-token JWT authentication, user registration, and password reset functionality.
+Standalone authentication service with dual-token JWT authentication, Google OAuth login, user registration, and password reset functionality.
 
 ## Architecture
 - **Dual-token authentication**: Short-lived access tokens (15 min) + long-lived refresh tokens (7 days)
 - **Database-backed refresh tokens**: Stored in PostgreSQL for revocation support
 - **Token rotation**: New refresh token issued on refresh, old one revoked
+- **Google OAuth**: Redirect-based backend flow with allow-listed return URLs
 
 ## Tech Stack
 - **Python 3.11** + Flask
 - **PostgreSQL** (production) or SQLite (development)
 - **Flask-SQLAlchemy** for ORM
+- **Authlib** for OAuth client integration
 - **Prometheus** for metrics (Counter, Gauge, Histogram)
 - **Werkzeug** for password hashing
 
@@ -27,6 +29,12 @@ Environment variables (supports Docker secrets in `/run/secrets/`):
 - `AUTH_COOKIE_DOMAIN`: Cookie domain (optional)
 - `AUTH_COOKIE_SAMESITE`: SameSite policy (default: Lax, can be None for cross-site)
 - `AUTH_COOKIE_SECURE`: Secure flag (default: 1)
+- `GOOGLE_CLIENT_ID`: Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET`: Google OAuth client secret
+- `GOOGLE_REDIRECT_URI`: Google OAuth redirect URI (optional)
+- `AUTH_OAUTH_RETURN_TO_DEFAULT`: Default post-OAuth redirect URL
+- `AUTH_OAUTH_RETURN_TO_ALLOWLIST`: Comma-separated allowed OAuth return origins
+- `GOALIXA_APP_URL`: Backward-compatible fallback OAuth return URL
 - `REGISTERABLE`: Enable public registration (default: 1)
 - `LOG_LEVEL`: Logging level (default: INFO)
 
@@ -37,6 +45,7 @@ Environment variables (supports Docker secrets in `/run/secrets/`):
 - ProxyFix for proper proxy header handling
 - Prometheus metrics on all endpoints (except /metrics)
 - Auto-refresh access tokens via refresh token in `before_request`
+- Validate OAuth `return_to` against an allow-list before redirecting
 
 ## File Structure
 ```
@@ -46,7 +55,8 @@ goalixa-auth/
 ├── auth/
 │   ├── __init__.py
 │   ├── models.py          # User, RefreshToken, PasswordResetToken
-│   └── jwt.py             # JWT creation/validation
+│   ├── jwt.py             # JWT creation/validation
+│   └── oauth.py           # OAuth provider initialization
 └── README.md
 ```
 
@@ -55,6 +65,8 @@ goalixa-auth/
 - `GET /metrics`: Prometheus metrics
 - `POST /api/login`: Email/password login
 - `POST /api/register`: User registration
+- `GET /api/oauth/google/start`: Start Google OAuth flow (`?return_to=...`)
+- `GET /api/oauth/google/callback`: Complete Google OAuth flow and redirect
 - `POST /api/logout`: Logout (revokes refresh token)
 - `POST /api/refresh`: Refresh access token
 - `POST /api/forgot`: Initiate password reset

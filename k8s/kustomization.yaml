@@ -18,4 +18,7 @@ images:
 #   --from-literal=AUTH_JWT_SECRET=<your-jwt-secret> \
 #   --from-literal=AUTH_SECRET_KEY=<your-flask-secret> \
 #   --from-literal=AUTH_DATABASE_URI=<your-database-uri> \
+#   --from-literal=GOOGLE_CLIENT_ID=<your-google-client-id> \
+#   --from-literal=GOOGLE_CLIENT_SECRET=<your-google-client-secret> \
+#   --from-literal=GOOGLE_REDIRECT_URI=<your-google-redirect-uri> \
 #   -n goalixa-auth

@@ -8,6 +8,10 @@ data:
   LOG_LEVEL: "INFO"
 
   # Auth service configuration
+  # Default return URL after OAuth login
+  GOALIXA_APP_URL: "https://app.goalixa.com"
+  # Optional strict OAuth allow-list (comma-separated origins). Empty means use GOALIXA_APP_URL origin.
+  AUTH_OAUTH_RETURN_TO_ALLOWLIST: ""
   # Legacy single-token TTL (deprecated, kept for backward compatibility)
   AUTH_JWT_TTL_MINUTES: "120"
   AUTH_COOKIE_NAME: "goalixa_auth"
