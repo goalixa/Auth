@@ -5,7 +5,7 @@ Standalone authentication service for Goalixa with dual-token authentication.
 ## Local run
 
 ```bash
-python app.py
+python3 app.py
 ```
 
 ## Metrics
@@ -18,20 +18,16 @@ Prometheus metrics are exposed at `GET /metrics`.
 - `AUTH_JWT_SECRET`: Secret for signing auth tokens (must match Goalixa app).
 
 ### Optional
-- `AUTH_SECRET_KEY`: Flask session secret (defaults to dev secret).
+- `AUTH_SECRET_KEY`: Flask secret key (defaults to dev secret).
 - `AUTH_DATABASE_URI`: SQLAlchemy database URI (defaults to `sqlite:///data.db`).
 - `AUTH_ACCESS_TOKEN_TTL_MINUTES`: Access token lifetime in minutes (default: `15`).
 - `AUTH_REFRESH_TOKEN_TTL_DAYS`: Refresh token lifetime in days (default: `7`).
 - `AUTH_ACCESS_COOKIE_NAME`: Access token cookie name (default: `goalixa_access`).
 - `AUTH_REFRESH_COOKIE_NAME`: Refresh token cookie name (default: `goalixa_refresh`).
 - `AUTH_COOKIE_SECURE`: Set to `1` to require HTTPS cookies (auto-enabled with `SameSite=None`).
-- `AUTH_COOKIE_SAMESITE`: Cookie SameSite attribute (default: `None` for cross-domain).
-- `AUTH_COOKIE_DOMAIN`: Cookie domain (auto-detected from `GOALIXA_APP_URL` for goalixa.com).
-- `GOALIXA_APP_URL`: Where to redirect after login/logout (default: `https://goalixa.com/app`).
+- `AUTH_COOKIE_SAMESITE`: Cookie SameSite attribute (default: `Lax`; set to `None` for cross-domain).
+- `AUTH_COOKIE_DOMAIN`: Cookie domain (optional).
 - `REGISTERABLE`: Set to `0` to disable registration (default: `1`).
-- `GOOGLE_CLIENT_ID`: Google OAuth client ID.
-- `GOOGLE_CLIENT_SECRET`: Google OAuth client secret.
-- `GOOGLE_REDIRECT_URI`: Google OAuth redirect URI.
 - `ADMIN_EMAIL`: Bootstrap admin user email.
 - `ADMIN_PASSWORD`: Bootstrap admin user password.
 - `LOG_LEVEL`: Logging level (default: `INFO`).
@@ -45,10 +41,10 @@ This service implements a dual-token authentication system for enhanced security
 
 ### Token Flow
 
-1. User logs in via `/api/login`, `/api/register`, or OAuth
+1. User logs in via `/api/login` or `/api/register`
 2. Service issues both access and refresh tokens as HTTP-only cookies
 3. Access token is used for authentication
-4. When access token expires, frontend automatically calls `/api/refresh` to get a new access token
+4. When access token expires, clients call `/api/refresh` to get a new access token
 5. Refresh tokens are rotated on each refresh for security (old token revoked, new one issued)
 
 ### Security Features
@@ -62,17 +58,16 @@ This service implements a dual-token authentication system for enhanced security
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/login` | GET | Serve login UI |
-| `/login` | POST | Validate credentials, issue dual tokens, redirect |
+| `/` | GET | Service info |
+| `/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
 | `/api/login` | POST | JSON login, issue dual tokens |
-| `/register` | GET | Serve registration UI |
-| `/register` | POST | Create user, issue dual tokens, redirect |
 | `/api/register` | POST | JSON registration, issue dual tokens |
+| `/api/forgot` | POST | Start password reset flow (returns reset token when account exists) |
+| `/api/password-reset/request` | POST | Alias of `/api/forgot` |
+| `/api/password-reset/confirm` | POST | Confirm password reset |
 | `/api/refresh` | POST | Exchange refresh token for new access token (rotates refresh token) |
-| `/logout` | GET | Revoke refresh token, clear cookies, redirect |
 | `/api/logout` | POST | Revoke refresh token, clear cookies, return JSON |
-| `/login/google` | GET | Start Google OAuth flow |
-| `/login/google/callback` | GET | Finalize Google OAuth, issue dual tokens |
 | `/api/me` | GET | Get current user info |
 
 ### Database Migration

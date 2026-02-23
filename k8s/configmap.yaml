@@ -8,7 +8,6 @@ data:
   LOG_LEVEL: "INFO"
 
   # Auth service configuration
-  GOALIXA_APP_URL: "https://app.goalixa.com"
   # Legacy single-token TTL (deprecated, kept for backward compatibility)
   AUTH_JWT_TTL_MINUTES: "120"
   AUTH_COOKIE_NAME: "goalixa_auth"

@@ -15,7 +15,7 @@ images:
 
 # Secret is managed separately - create using:
 # kubectl create secret generic auth-secrets \
-#   --from-literal=GOOGLE_CLIENT_ID=<your-client-id> \
-#   --from-literal=GOOGLE_CLIENT_SECRET=<your-client-secret> \
-#   --from-literal=JWT_SECRET=<your-jwt-secret> \
+#   --from-literal=AUTH_JWT_SECRET=<your-jwt-secret> \
+#   --from-literal=AUTH_SECRET_KEY=<your-flask-secret> \
+#   --from-literal=AUTH_DATABASE_URI=<your-database-uri> \
 #   -n goalixa-auth
