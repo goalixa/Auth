@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, Summary, Info, generate_latest
 
 from auth.jwt import (
     create_access_token,
@@ -129,19 +129,134 @@ def append_query_params(url, extra_params):
             query[key] = str(value)
     return urlunparse(parsed._replace(query=urlencode(query)))
 
+# ============= HTTP Request Metrics =============
 REQUEST_COUNT = Counter(
-    "http_requests_total",
+    "goalixa_auth_http_requests_total",
     "Total HTTP requests",
     ["method", "endpoint", "http_status"],
 )
 REQUEST_LATENCY = Histogram(
-    "http_request_duration_seconds",
+    "goalixa_auth_http_request_duration_seconds",
     "HTTP request latency",
     ["method", "endpoint"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+REQUEST_SIZE_BYTES = Summary(
+    "goalixa_auth_http_request_size_bytes",
+    "HTTP request size in bytes",
+    ["method", "endpoint"]
+)
+RESPONSE_SIZE_BYTES = Summary(
+    "goalixa_auth_http_response_size_bytes",
+    "HTTP response size in bytes",
+    ["method", "endpoint", "http_status"]
 )
 INPROGRESS_REQUESTS = Gauge(
-    "http_requests_inprogress",
+    "goalixa_auth_http_requests_inprogress",
     "In progress HTTP requests",
+)
+
+# ============= Authentication Metrics =============
+AUTH_LOGIN_TOTAL = Counter(
+    "goalixa_auth_login_total",
+    "Total login attempts",
+    ["status"],  # status: success, failed_credentials, failed_inactive, missing_creds
+)
+AUTH_REGISTER_TOTAL = Counter(
+    "goalixa_auth_register_total",
+    "Total registration attempts",
+    ["status"],  # status: success, failed_disabled, failed_exists, failed_validation
+)
+AUTH_LOGOUT_TOTAL = Counter(
+    "goalixa_auth_logout_total",
+    "Total logout attempts",
+    ["status"],
+)
+AUTH_REFRESH_TOTAL = Counter(
+    "goalixa_auth_token_refresh_total",
+    "Total token refresh attempts",
+    ["status"],  # status: success, failed_missing, failed_invalid, failed_expired, failed_user_inactive
+)
+AUTH_TOKEN_ISSUED_TOTAL = Counter(
+    "goalixa_auth_token_issued_total",
+    "Total tokens issued",
+    ["token_type"],  # token_type: access, refresh
+)
+AUTH_VALIDATION_TOTAL = Counter(
+    "goalixa_auth_validation_total",
+    "Total token validations",
+    ["token_type", "status"],  # token_type: access, refresh; status: success, failed, expired
+)
+
+# ============= OAuth Metrics =============
+OAUTH_GOOGLE_TOTAL = Counter(
+    "goalixa_auth_oauth_google_total",
+    "Total Google OAuth operations",
+    ["operation", "status"],  # operation: start, callback, user_created, user_login
+)
+OAUTH_GOOGLE_DURATION_SECONDS = Histogram(
+    "goalixa_auth_oauth_google_duration_seconds",
+    "Google OAuth operation duration",
+    ["operation"],
+    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0),
+)
+
+# ============= Password Reset Metrics =============
+PASSWORD_RESET_REQUEST_TOTAL = Counter(
+    "goalixa_auth_password_reset_request_total",
+    "Total password reset requests",
+    ["status"],  # status: success, failed_validation
+)
+PASSWORD_RESET_CONFIRM_TOTAL = Counter(
+    "goalixa_auth_password_reset_confirm_total",
+    "Total password reset confirmations",
+    ["status"],  # status: success, failed_invalid, failed_expired
+)
+
+# ============= Database Metrics =============
+DB_QUERY_DURATION_SECONDS = Histogram(
+    "goalixa_auth_db_query_duration_seconds",
+    "Database query duration",
+    ["operation", "table"],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5),
+)
+DB_QUERY_TOTAL = Counter(
+    "goalixa_auth_db_queries_total",
+    "Total database queries",
+    ["operation", "table", "status"],
+)
+DB_CONNECTION_POOL = Gauge(
+    "goalixa_auth_db_connection_pool",
+    "Database connection pool size",
+)
+
+# ============= Session Metrics =============
+ACTIVE_SESSIONS = Gauge(
+    "goalixa_auth_active_sessions",
+    "Number of active user sessions",
+)
+SESSION_DURATION_SECONDS = Histogram(
+    "goalixa_auth_session_duration_seconds",
+    "User session duration",
+    buckets=(60, 300, 600, 1800, 3600, 7200, 14400, 28800, 43200, 86400),
+)
+
+# ============= Security Metrics =============
+AUTH_FAILURES_TOTAL = Counter(
+    "goalixa_auth_failures_total",
+    "Total authentication failures",
+    ["failure_type"],  # failure_type: invalid_credentials, invalid_token, expired_token, account_inactive
+)
+SUSPICIOUS_ACTIVITY_TOTAL = Counter(
+    "goalixa_auth_suspicious_activity_total",
+    "Total suspicious activity detected",
+    ["activity_type"],  # activity_type: brute_force, token_abuse, abnormal_usage
+)
+
+# ============= Application Info =============
+APP_INFO = Info(
+    "goalixa_auth_app_info",
+    "Goalixa Auth service information"
 )
 
 
@@ -151,6 +266,14 @@ def create_app():
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(level=log_level, format="%(asctime)s %(levelname)s %(message)s")
     app.logger.setLevel(log_level)
+
+    # Initialize application info
+    APP_INFO.info({
+        'version': os.getenv('APP_VERSION', '1.0.0'),
+        'environment': os.getenv('ENVIRONMENT', 'development'),
+        'service': 'goalixa-auth'
+    })
+
     app.config["SECRET_KEY"] = get_config_value("AUTH_SECRET_KEY", "dev-auth-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = get_config_value(
         "AUTH_DATABASE_URI", f"sqlite:///{DB_PATH}"
@@ -427,6 +550,7 @@ def create_app():
             secret=app.config["AUTH_JWT_SECRET"],
             ttl_minutes=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"],
         )
+        AUTH_TOKEN_ISSUED_TOTAL.labels(token_type="access").inc()
 
         # Create refresh token
         from auth.models import db
@@ -451,6 +575,7 @@ def create_app():
         )
         db.session.add(refresh_token)
         db.session.commit()
+        AUTH_TOKEN_ISSUED_TOTAL.labels(token_type="refresh").inc()
 
         return access_token, refresh_token_jwt
 
@@ -646,30 +771,39 @@ def create_app():
         password = data.get("password", "")
         if not email or not password:
             app.logger.warning("api login missing credentials")
+            AUTH_LOGIN_TOTAL.labels(status="missing_credentials").inc()
             return {"success": False, "error": "Email and password are required."}, 400
         user = User.query.filter_by(email=email).first()
         if not user or not check_password_hash(user.password_hash, password):
             app.logger.warning("api login invalid credentials", extra={"email": email})
+            AUTH_LOGIN_TOTAL.labels(status="failed_credentials").inc()
+            AUTH_FAILURES_TOTAL.labels(failure_type="invalid_credentials").inc()
             return {"success": False, "error": "Invalid email or password."}, 401
         if not user.active:
             app.logger.warning("api login inactive user", extra={"user_id": user.id})
+            AUTH_LOGIN_TOTAL.labels(status="failed_inactive").inc()
+            AUTH_FAILURES_TOTAL.labels(failure_type="account_inactive").inc()
             return {"success": False, "error": "Your account is inactive."}, 403
+        AUTH_LOGIN_TOTAL.labels(status="success").inc()
         return issue_auth_json_response(user)
 
     @app.route("/api/register", methods=["POST"])
     def api_register():
         if not app.config["REGISTERABLE"]:
             app.logger.warning("api register disabled")
+            AUTH_REGISTER_TOTAL.labels(status="failed_disabled").inc()
             return {"success": False, "error": "Registration is disabled."}, 403
         data = request.get_json(silent=True) or {}
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password", "")
         if not email or not password:
             app.logger.warning("api register missing credentials")
+            AUTH_REGISTER_TOTAL.labels(status="failed_validation").inc()
             return {"success": False, "error": "Email and password are required."}, 400
         existing = User.query.filter_by(email=email).first()
         if existing:
             app.logger.warning("api register email exists", extra={"email": email})
+            AUTH_REGISTER_TOTAL.labels(status="failed_exists").inc()
             return {"success": False, "error": "Email already registered."}, 409
         user = User(
             email=email,
@@ -683,8 +817,10 @@ def create_app():
         except IntegrityError:
             db.session.rollback()
             app.logger.warning("api register email exists (integrity)", extra={"email": email})
+            AUTH_REGISTER_TOTAL.labels(status="failed_exists").inc()
             return {"success": False, "error": "Email already registered."}, 409
         app.logger.info("api register success", extra={"user_id": user.id, "email": email})
+        AUTH_REGISTER_TOTAL.labels(status="success").inc()
         return issue_auth_json_response(user)
 
     @app.route("/api/forgot", methods=["POST"])
@@ -766,6 +902,7 @@ def create_app():
                     )
 
         app.logger.info("api logout")
+        AUTH_LOGOUT_TOTAL.labels(status="success").inc()
         response = make_response({"success": True})
         # Clear both access and refresh cookies
         for cookie_name in [
@@ -788,6 +925,7 @@ def create_app():
 
         if not refresh_token_jwt:
             app.logger.warning("api refresh missing cookie")
+            AUTH_REFRESH_TOTAL.labels(status="failed_missing").inc()
             return {"success": False, "error": "Refresh token not found."}, 401
 
         # Decode refresh token JWT
@@ -796,10 +934,12 @@ def create_app():
         )
         if err:
             app.logger.warning("api refresh decode failed", extra={"reason": err})
+            AUTH_REFRESH_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "Invalid refresh token."}, 401
 
         if not payload or "sub" not in payload or "jti" not in payload:
             app.logger.warning("api refresh invalid payload")
+            AUTH_REFRESH_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "Invalid refresh token."}, 401
 
         # Check database for token validity
@@ -809,6 +949,7 @@ def create_app():
             user_id = int(payload.get("sub"))
         except (TypeError, ValueError):
             app.logger.warning("api refresh invalid user_id", extra={"sub": payload.get("sub")})
+            AUTH_REFRESH_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "Invalid refresh token."}, 401
 
         refresh_token = RefreshToken.query.filter_by(
@@ -820,6 +961,7 @@ def create_app():
                 "api refresh token invalid or revoked",
                 extra={"token_id": payload["jti"], "user_id": user_id},
             )
+            AUTH_REFRESH_TOTAL.labels(status="failed_expired").inc()
             return {"success": False, "error": "Invalid or expired refresh token."}, 401
 
         user = User.query.get(user_id)
@@ -828,6 +970,7 @@ def create_app():
                 "api refresh user not found or inactive",
                 extra={"user_id": user_id},
             )
+            AUTH_REFRESH_TOTAL.labels(status="failed_user_inactive").inc()
             return {"success": False, "error": "User not found or inactive."}, 401
 
         # Create new access token
@@ -873,6 +1016,8 @@ def create_app():
                 "new_token_id": new_refresh_token_str,
             },
         )
+
+        AUTH_REFRESH_TOTAL.labels(status="success").inc()
 
         # Set new cookies
         response = make_response({"success": True, "access_token": access_token})
