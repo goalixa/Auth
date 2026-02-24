@@ -16,6 +16,7 @@ from flask import (
     request,
     url_for,
 )
+from sqlalchemy.exc import IntegrityError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -677,7 +678,12 @@ def create_app():
         from auth.models import db
 
         db.session.add(user)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            app.logger.warning("api register email exists (integrity)", extra={"email": email})
+            return {"success": False, "error": "Email already registered."}, 409
         app.logger.info("api register success", extra={"user_id": user.id, "email": email})
         return issue_auth_json_response(user)
 
