@@ -10,7 +10,7 @@ resources:
 images:
   - name: ghcr.io/goalixa/goalixa-auth
     newName: harbor.goalixa.com/goalixa-auth/auth
-    newTag: 4c96f76
+    newTag: 0d434f7
 
 # Secret is managed separately - create using:
 # kubectl create secret generic auth-secrets \
