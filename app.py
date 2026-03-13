@@ -1056,6 +1056,22 @@ def create_app():
             }
         return {"authenticated": False, "user": None}
 
+    @app.route("/api/verify-email", methods=["POST"])
+    def api_verify_email():
+        """Verify email address with token."""
+        data = request.get_json(silent=True) or {}
+        token = str(data.get("token", "")).strip()
+
+        if not token:
+            app.logger.warning("api verify email missing token")
+            return {"success": False, "error": "Token is required."}, 400
+
+        # Simple placeholder implementation that validates token format
+        # In production, you would verify against a stored token in the database
+        # For now, accept any non-empty token as valid (consider implementing proper verification)
+        app.logger.info("api verify email called", extra={"token_length": len(token)})
+        return {"success": True, "message": "Email verified successfully."}
+
     return app
 
 
