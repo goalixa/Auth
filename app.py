@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from time import time
@@ -264,6 +265,40 @@ APP_INFO = Info(
     "goalixa_auth_app_info",
     "Goalixa Auth service information"
 )
+
+
+# ============= Password Validation =============
+def validate_password_complexity(password: str) -> tuple[bool, str]:
+    """
+    Validate password complexity requirements.
+
+    Requirements:
+    - Minimum 8 characters
+    - At least one lowercase letter
+    - At least one uppercase letter
+    - At least one digit
+    - At least one special character
+
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long."
+
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter."
+
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter."
+
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one digit."
+
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain at least one special character."
+
+    return True, ""
+
 
 
 def create_app():
@@ -806,6 +841,14 @@ def create_app():
             app.logger.warning("api register missing credentials")
             AUTH_REGISTER_TOTAL.labels(status="failed_validation").inc()
             return {"success": False, "error": "Email and password are required."}, 400
+
+        # Validate password complexity
+        is_valid, error_msg = validate_password_complexity(password)
+        if not is_valid:
+            app.logger.warning("api register weak password", extra={"email": email})
+            AUTH_REGISTER_TOTAL.labels(status="failed_validation").inc()
+            return {"success": False, "error": error_msg}, 400
+
         existing = User.query.filter_by(email=email).first()
         if existing:
             app.logger.warning("api register email exists", extra={"email": email})
@@ -825,9 +868,18 @@ def create_app():
             app.logger.warning("api register email exists (integrity)", extra={"email": email})
             AUTH_REGISTER_TOTAL.labels(status="failed_exists").inc()
             return {"success": False, "error": "Email already registered."}, 409
+
+        # Create email verification token
+        verification_token = create_email_verification_token(user)
         app.logger.info("api register success", extra={"user_id": user.id, "email": email})
         AUTH_REGISTER_TOTAL.labels(status="success").inc()
-        return issue_auth_json_response(user)
+
+        # Return auth response along with verification token
+        response = issue_auth_json_response(user)
+        response["verification_token"] = verification_token.token
+        response["email_verified"] = user.email_verified
+        response["message"] = "Registration successful. Please verify your email address."
+        return response
 
     @app.route("/api/forgot", methods=["POST"])
     def api_forgot_password():
@@ -866,6 +918,12 @@ def create_app():
         if not token or not password:
             app.logger.warning("api password reset confirm missing fields")
             return {"success": False, "error": "Token and password are required."}, 400
+
+        # Validate password complexity
+        is_valid, error_msg = validate_password_complexity(password)
+        if not is_valid:
+            app.logger.warning("api password reset weak password")
+            return {"success": False, "error": error_msg}, 400
 
         reset_token = PasswordResetToken.query.filter_by(token=token).first()
         if not reset_token or not reset_token.is_valid():
