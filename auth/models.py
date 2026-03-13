@@ -16,9 +16,11 @@ class User(db.Model):
     email = db.Column(db.String(255), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     active = db.Column(db.Boolean, default=True)
+    email_verified = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     refresh_tokens = db.relationship("RefreshToken", backref="user", lazy="dynamic")
+    email_verification_tokens = db.relationship("EmailVerificationToken", backref="user", lazy="dynamic")
 
 
 class PasswordResetToken(db.Model):
@@ -44,6 +46,34 @@ def create_reset_token(user, ttl_minutes=30):
     db.session.commit()
     logger.info("password reset token created", extra={"user_id": user.id})
     return reset_token
+
+
+class EmailVerificationToken(db.Model):
+    __tablename__ = "email_verification_token"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref="verification_tokens")
+
+    def is_valid(self):
+        return self.used_at is None and self.expires_at >= datetime.utcnow()
+
+
+def create_email_verification_token(user, ttl_minutes=60):
+    """Create an email verification token for a user."""
+    token = uuid.uuid4().hex
+    expires_at = datetime.utcnow() + timedelta(minutes=ttl_minutes)
+    verification_token = EmailVerificationToken(
+        user_id=user.id, token=token, expires_at=expires_at
+    )
+    db.session.add(verification_token)
+    db.session.commit()
+    logger.info("email verification token created", extra={"user_id": user.id})
+    return verification_token
 
 
 class RefreshToken(db.Model):

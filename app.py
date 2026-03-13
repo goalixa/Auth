@@ -30,9 +30,11 @@ from auth.jwt import (
     decode_refresh_token,
 )
 from auth.models import (
+    EmailVerificationToken,
     PasswordResetToken,
     RefreshToken,
     User,
+    create_email_verification_token,
     create_reset_token,
     init_db,
 )
@@ -67,13 +69,17 @@ def get_jwt_secret():
     Resolve the JWT signing secret. Preference order:
     1) AUTH_JWT_SECRET (env or /run/secrets)
     2) AUTH_SECRET_KEY (env or /run/secrets) for backward compatibility
-    3) hard-coded dev fallback
+
+    Raises:
+        ValueError: If no JWT secret is configured
     """
-    return (
-        get_config_value("AUTH_JWT_SECRET")
-        or get_config_value("AUTH_SECRET_KEY")
-        or "dev-jwt-secret"
-    )
+    secret = get_config_value("AUTH_JWT_SECRET") or get_config_value("AUTH_SECRET_KEY")
+    if not secret:
+        raise ValueError(
+            "JWT_SECRET not configured. Please set AUTH_JWT_SECRET or AUTH_SECRET_KEY "
+            "environment variable or provide it via /run/secrets."
+        )
+    return secret
 
 
 def normalize_origin(value):
@@ -1066,11 +1072,34 @@ def create_app():
             app.logger.warning("api verify email missing token")
             return {"success": False, "error": "Token is required."}, 400
 
-        # Simple placeholder implementation that validates token format
-        # In production, you would verify against a stored token in the database
-        # For now, accept any non-empty token as valid (consider implementing proper verification)
-        app.logger.info("api verify email called", extra={"token_length": len(token)})
-        return {"success": True, "message": "Email verified successfully."}
+        # Verify token against database
+        verification_token = EmailVerificationToken.query.filter_by(token=token).first()
+
+        if not verification_token:
+            app.logger.warning("api verify email invalid token", extra={"token": token[:8] + "..."})
+            return {"success": False, "error": "Invalid or expired token."}, 400
+
+        if not verification_token.is_valid():
+            app.logger.warning("api verify email expired or used token", extra={
+                "token_id": verification_token.id,
+                "user_id": verification_token.user_id
+            })
+            return {"success": False, "error": "Token has expired or already used."}, 400
+
+        # Mark token as used
+        verification_token.used_at = datetime.utcnow()
+
+        # Mark user email as verified
+        user = User.query.get(verification_token.user_id)
+        if user:
+            user.email_verified = True
+            from auth.models import db
+            db.session.commit()
+            app.logger.info("api verify email success", extra={"user_id": user.id})
+            return {"success": True, "message": "Email verified successfully."}
+        else:
+            app.logger.error("api verify email user not found", extra={"user_id": verification_token.user_id})
+            return {"success": False, "error": "User not found."}, 404
 
     return app
 
