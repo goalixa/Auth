@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -44,6 +46,119 @@ from auth.oauth import init_oauth, oauth
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data.db")
 SECRETS_DIR = "/run/secrets"
+
+
+# ============= Input Validation and Sanitization =============
+def sanitize_email(email: str) -> str:
+    """
+    Validate and sanitize email address.
+
+    Args:
+        email: Raw email input
+
+    Returns:
+        Sanitized email address or empty string if invalid
+
+    Security:
+        - Removes control characters
+        - Validates email format
+        - Converts to lowercase
+        - Strips whitespace
+    """
+    if not email:
+        return ""
+
+    # Remove control characters and null bytes
+    email = re.sub(r'[\x00-\x1f\x7f]', '', email)
+
+    # Strip whitespace and convert to lowercase
+    email = email.strip().lower()
+
+    # Basic email format validation
+    # RFC 5322 compliant (simplified)
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, email):
+        return ""
+
+    # Additional check for consecutive dots which can be problematic
+    if '..' in email:
+        return ""
+
+    return email
+
+
+def sanitize_password(password: str) -> str:
+    """
+    Sanitize password input.
+
+    Args:
+        password: Raw password input
+
+    Returns:
+        Sanitized password string
+
+    Security:
+        - Removes null bytes
+        - Preserves special characters (needed for passwords)
+        - Trims to reasonable max length (prevents DoS)
+    """
+    if not password:
+        return ""
+
+    # Remove null bytes but keep other characters
+    # (passwords can contain special characters)
+    password = password.replace('\x00', '')
+
+    # Limit password length to prevent DoS
+    # Max 128 characters is reasonable for passwords
+    if len(password) > 128:
+        password = password[:128]
+
+    return password
+
+
+def validate_email(email: str) -> tuple[bool, str]:
+    """
+    Validate email address with detailed error messages.
+
+    Args:
+        email: Email to validate
+
+    Returns:
+        (is_valid, error_message)
+    """
+    if not email:
+        return False, "Email is required."
+
+    sanitized = sanitize_email(email)
+    if not sanitized:
+        return False, "Invalid email format."
+
+    return True, sanitized
+
+
+def sanitize_string_input(input_str: str, max_length: int = 255) -> str:
+    """
+    Generic string sanitization for user input.
+
+    Args:
+        input_str: Raw input string
+        max_length: Maximum allowed length
+
+    Returns:
+        Sanitized string
+    """
+    if not input_str:
+        return ""
+
+    # Remove control characters and null bytes
+    sanitized = re.sub(r'[\x00-\x1f\x7f]', '', str(input_str))
+
+    # Trim to max length
+    sanitized = sanitized[:max_length].strip()
+
+    return sanitized
+
 
 
 def read_docker_secret(name):
@@ -109,21 +224,89 @@ def parse_allowed_origins(raw_allowlist, default_return_to):
 
 
 def encode_oauth_state(payload):
+    """
+    Encode OAuth state with HMAC signature to prevent tampering.
+
+    Format: base64(payload).base64(signature)
+    This prevents attackers from modifying the return_to URL.
+    """
+    # Get JWT secret for signing
+    secret = get_jwt_secret()
+
+    # Serialize payload
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
+    # Create signature
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        raw,
+        hashlib.sha256
+    ).digest()
+
+    # Encode both payload and signature
+    encoded_payload = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+    encoded_signature = base64.urlsafe_b64encode(signature).decode("utf-8").rstrip("=")
+
+    # Return combined state
+    return f"{encoded_payload}.{encoded_signature}"
 
 
 def decode_oauth_state(state):
+    """
+    Decode and validate OAuth state with HMAC signature verification.
+
+    Returns empty dict if signature is invalid or state is malformed.
+    """
     if not state:
+        app.logger.warning("OAuth state is empty")
         return {}
+
     try:
-        padding = "=" * (-len(state) % 4)
-        decoded = base64.urlsafe_b64decode(f"{state}{padding}".encode("utf-8"))
-        payload = json.loads(decoded.decode("utf-8"))
+        # Split payload and signature
+        parts = state.split(".")
+        if len(parts) != 2:
+            app.logger.warning("OAuth state has invalid format")
+            return {}
+
+        encoded_payload = parts[0]
+        encoded_signature = parts[1]
+
+        # Decode payload
+        padding = "=" * (-len(encoded_payload) % 4)
+        decoded = base64.urlsafe_b64decode(f"{encoded_payload}{padding}".encode("utf-8"))
+        payload_bytes = decoded
+
+        # Verify signature
+        secret = get_jwt_secret()
+        expected_signature = hmac.new(
+            secret.encode("utf-8"),
+            payload_bytes,
+            hashlib.sha256
+        ).digest()
+
+        # Decode provided signature
+        sig_padding = "=" * (-len(encoded_signature) % 4)
+        provided_signature = base64.urlsafe_b64decode(
+            f"{encoded_signature}{sig_padding}".encode("utf-8")
+        )
+
+        # Use constant-time comparison to prevent timing attacks
+        if not hmac.compare_digest(provided_signature, expected_signature):
+            app.logger.warning("OAuth state signature verification failed")
+            return {}
+
+        # Parse payload
+        payload = json.loads(payload_bytes.decode("utf-8"))
         if isinstance(payload, dict):
             return payload
-    except (ValueError, TypeError):
+
+    except (ValueError, TypeError) as e:
+        app.logger.warning(f"Failed to decode OAuth state: {e}")
         return {}
+    except Exception as e:
+        app.logger.error(f"Unexpected error decoding OAuth state: {e}")
+        return {}
+
     return {}
 
 
@@ -265,6 +448,176 @@ APP_INFO = Info(
     "goalixa_auth_app_info",
     "Goalixa Auth service information"
 )
+
+
+# ============= Rate Limiting =============
+class RateLimiter:
+    """
+    Simple in-memory rate limiter for IP-based and action-based rate limiting.
+
+    Tracks request counts per IP/action with configurable windows and limits.
+    For production, consider using Redis for distributed rate limiting.
+    """
+
+    def __init__(self):
+        # Structure: {key: [(timestamp, count), ...]}
+        self._requests = {}
+        # Track blocked IPs: {ip: until_timestamp}
+        self._blocked = {}
+
+    def _get_key(self, identifier, action):
+        """Generate rate limit key."""
+        return f"{identifier}:{action}"
+
+    def _clean_old_entries(self, key, window_seconds):
+        """Remove entries older than the window."""
+        if key in self._requests:
+            cutoff = time() - window_seconds
+            self._requests[key] = [
+                (ts, count) for ts, count in self._requests[key]
+                if ts > cutoff
+            ]
+            # Remove empty lists
+            if not self._requests[key]:
+                del self._requests[key]
+
+    def is_blocked(self, identifier):
+        """Check if an identifier is temporarily blocked."""
+        blocked_until = self._blocked.get(identifier)
+        if blocked_until and time() < blocked_until:
+            return True, int(blocked_until - time())
+        # Clean up expired blocks
+        if blocked_until:
+            del self._blocked[identifier]
+        return False, 0
+
+    def is_rate_limited(
+        self,
+        identifier,
+        action,
+        limit,
+        window_seconds=60,
+        block_duration_seconds=300
+    ):
+        """
+        Check if action should be rate limited.
+
+        Args:
+            identifier: Unique identifier (IP address, user_id, etc.)
+            action: Action being performed (e.g., "login_attempt", "password_reset")
+            limit: Max requests allowed in window
+            window_seconds: Time window in seconds
+            block_duration_seconds: How long to block if limit exceeded
+
+        Returns:
+            (is_limited, retry_after_seconds)
+        """
+        # Check if blocked
+        blocked, retry_after = self.is_blocked(identifier)
+        if blocked:
+            return True, retry_after
+
+        key = self._get_key(identifier, action)
+        self._clean_old_entries(key, window_seconds)
+
+        # Get current window count
+        if key not in self._requests:
+            self._requests[key] = []
+
+        # Count requests in current window
+        current_count = sum(count for _, count in self._requests[key])
+
+        if current_count >= limit:
+            # Block this identifier
+            self._blocked[identifier] = time() + block_duration_seconds
+            app.logger.warning(
+                f"Rate limit exceeded for {action}",
+                extra={"identifier": identifier, "count": current_count}
+            )
+            return True, block_duration_seconds
+
+        # Add this request
+        self._requests[key].append((time(), 1))
+        return False, 0
+
+    def reset(self, identifier=None, action=None):
+        """Reset rate limit counters."""
+        if identifier and action:
+            key = self._get_key(identifier, action)
+            if key in self._requests:
+                del self._requests[key]
+        elif identifier:
+            # Clear all actions for this identifier
+            for key in list(self._requests.keys()):
+                if key.startswith(f"{identifier}:"):
+                    del self._requests[key]
+
+
+# Global rate limiter instance
+rate_limiter = RateLimiter()
+
+
+def get_client_ip():
+    """Get client IP address from request."""
+    # Check for forwarded headers (proxy/load balancer)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # Take the first IP (original client)
+        return forwarded_for.split(",")[0].strip()
+
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    return request.remote_addr
+
+
+def rate_limit(action, limit, window_seconds=60, block_duration_seconds=300):
+    """
+    Decorator for rate limiting endpoints.
+
+    Args:
+        action: Action name for rate limiting
+        limit: Max requests allowed in window
+        window_seconds: Time window (default 60s)
+        block_duration_seconds: Block duration after limit exceeded (default 300s)
+    """
+    def decorator(f):
+        def wrapped(*args, **kwargs):
+            ip = get_client_ip()
+
+            # Check rate limit
+            is_limited, retry_after = rate_limiter.is_rate_limited(
+                identifier=ip,
+                action=action,
+                limit=limit,
+                window_seconds=window_seconds,
+                block_duration_seconds=block_duration_seconds
+            )
+
+            if is_limited:
+                app.logger.warning(
+                    f"Rate limit applied for {action}",
+                    extra={"ip": ip, "retry_after": retry_after}
+                )
+                response = {
+                    "success": False,
+                    "error": f"Too many attempts. Please try again in {retry_after} seconds."
+                }, 429
+                # Add Retry-After header
+                if hasattr(response, 'headers'):
+                    response.headers["Retry-After"] = str(retry_after)
+                return response
+
+            return f(*args, **kwargs)
+
+        # Preserve function metadata
+        wrapped.__name__ = f.__name__
+        wrapped.__doc__ = f.__doc__
+        return wrapped
+
+    return decorator
+
 
 
 # ============= Password Validation =============
@@ -806,25 +1159,52 @@ def create_app():
         return issue_auth_redirect_response(user, return_to)
 
     @app.route("/api/login", methods=["POST"])
+    @rate_limit(action="login_attempt", limit=5, window_seconds=300, block_duration_seconds=900)
     def api_login():
         data = request.get_json(silent=True) or {}
-        email = str(data.get("email", "")).strip().lower()
-        password = data.get("password", "")
+        raw_email = data.get("email", "")
+        raw_password = data.get("password", "")
+
+        # Sanitize inputs
+        email = sanitize_email(raw_email)
+        password = sanitize_password(raw_password)
+
         if not email or not password:
             app.logger.warning("api login missing credentials")
             AUTH_LOGIN_TOTAL.labels(status="missing_credentials").inc()
             return {"success": False, "error": "Email and password are required."}, 400
+
+        # Fetch user (always executes, timing is consistent)
         user = User.query.filter_by(email=email).first()
-        if not user or not check_password_hash(user.password_hash, password):
+
+        # Use a dummy password hash to prevent timing attacks
+        # This ensures constant-time execution whether user exists or not
+        dummy_hash = generate_password_hash("dummy_password_for_timing_attack_prevention")
+
+        # Check password with constant-time comparison
+        # Always perform password verification to prevent timing attacks
+        password_valid = False
+        if user:
+            # Real user - verify their password
+            password_valid = check_password_hash(user.password_hash, password)
+        else:
+            # Non-existent user - still perform a hash verification to prevent timing attacks
+            # This hash comparison will always fail, but takes the same time
+            check_password_hash(dummy_hash, password)
+
+        if not password_valid or not user:
+            # Use generic error message to prevent user enumeration
             app.logger.warning("api login invalid credentials", extra={"email": email})
             AUTH_LOGIN_TOTAL.labels(status="failed_credentials").inc()
             AUTH_FAILURES_TOTAL.labels(failure_type="invalid_credentials").inc()
             return {"success": False, "error": "Invalid email or password."}, 401
+
         if not user.active:
             app.logger.warning("api login inactive user", extra={"user_id": user.id})
             AUTH_LOGIN_TOTAL.labels(status="failed_inactive").inc()
             AUTH_FAILURES_TOTAL.labels(failure_type="account_inactive").inc()
             return {"success": False, "error": "Your account is inactive."}, 403
+
         AUTH_LOGIN_TOTAL.labels(status="success").inc()
         return issue_auth_json_response(user)
 
@@ -835,8 +1215,11 @@ def create_app():
             AUTH_REGISTER_TOTAL.labels(status="failed_disabled").inc()
             return {"success": False, "error": "Registration is disabled."}, 403
         data = request.get_json(silent=True) or {}
-        email = str(data.get("email", "")).strip().lower()
-        password = data.get("password", "")
+
+        # Sanitize inputs
+        email = sanitize_email(data.get("email", ""))
+        password = sanitize_password(data.get("password", ""))
+
         if not email or not password:
             app.logger.warning("api register missing credentials")
             AUTH_REGISTER_TOTAL.labels(status="failed_validation").inc()
@@ -882,12 +1265,16 @@ def create_app():
         return response
 
     @app.route("/api/forgot", methods=["POST"])
+    @rate_limit(action="password_reset_request", limit=3, window_seconds=300, block_duration_seconds=900)
     def api_forgot_password():
         data = request.get_json(silent=True) or {}
-        email = str(data.get("email", "")).strip().lower()
+
+        # Sanitize email input
+        email = sanitize_email(data.get("email", ""))
         if not email:
             app.logger.warning("api forgot missing email")
             return {"success": False, "error": "Email is required."}, 400
+
         user = User.query.filter_by(email=email).first()
         reset_token_value = None
         if user:
@@ -903,17 +1290,21 @@ def create_app():
         }
 
     @app.route("/api/password-reset/request", methods=["POST"])
+    @rate_limit(action="password_reset_request", limit=3, window_seconds=300, block_duration_seconds=900)
     def api_password_reset_request():
         """Alias endpoint used by PWA for password-reset request flow."""
         return api_forgot_password()
 
     @app.route("/api/password-reset/confirm", methods=["POST"])
     @app.route("/api/reset", methods=["POST"])
+    @rate_limit(action="password_reset_confirm", limit=5, window_seconds=300, block_duration_seconds=900)
     def api_password_reset_confirm():
         """Confirm password reset with token + new password."""
         data = request.get_json(silent=True) or {}
-        token = str(data.get("token", "")).strip()
-        password = data.get("password", "")
+
+        # Sanitize inputs
+        token = sanitize_string_input(data.get("token", ""), max_length=256)
+        password = sanitize_password(data.get("password", ""))
 
         if not token or not password:
             app.logger.warning("api password reset confirm missing fields")
