@@ -3,6 +3,7 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from auth.email_templates import EmailTemplates
 
 logger = logging.getLogger(__name__)
 
@@ -86,114 +87,81 @@ class EmailService:
         # Create reset URL
         reset_url = f"{app_url}/reset-password?token={reset_token}"
 
-        # Create HTML email body
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                body {{
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                    background-color: #f4f4f4;
-                }}
-                .container {{
-                    background-color: #ffffff;
-                    border-radius: 8px;
-                    padding: 40px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }}
-                .header {{
-                    text-align: center;
-                    margin-bottom: 30px;
-                }}
-                .logo {{
-                    font-size: 24px;
-                    font-weight: bold;
-                    color: #4F46E5;
-                    margin-bottom: 10px;
-                }}
-                h1 {{
-                    color: #333;
-                    font-size: 24px;
-                    margin-bottom: 20px;
-                }}
-                p {{
-                    margin-bottom: 20px;
-                    color: #555;
-                }}
-                .button {{
-                    display: inline-block;
-                    background-color: #4F46E5;
-                    color: #ffffff;
-                    text-decoration: none;
-                    padding: 12px 30px;
-                    border-radius: 6px;
-                    font-weight: 600;
-                    margin: 20px 0;
-                }}
-                .button:hover {{
-                    background-color: #4338CA;
-                }}
-                .footer {{
-                    margin-top: 30px;
-                    padding-top: 20px;
-                    border-top: 1px solid #e5e7eb;
-                    text-align: center;
-                    font-size: 12px;
-                    color: #9ca3af;
-                }}
-                .warning {{
-                    background-color: #FEF3C7;
-                    border-left: 4px solid #F59E0B;
-                    padding: 12px;
-                    margin: 20px 0;
-                    font-size: 14px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <div class="logo">Goalixa</div>
-                </div>
+        # Use template
+        html_body = EmailTemplates.password_reset_request(
+            reset_link=reset_url,
+            recipient_email=to
+        )
 
-                <h1>Password Reset Request</h1>
+        return self.send_email(to, "Reset Your Password", html_body)
 
-                <p>Hello,</p>
-
-                <p>We received a request to reset your password for your Goalixa account. Click the button below to create a new password:</p>
-
-                <div style="text-align: center;">
-                    <a href="{reset_url}" class="button">Reset Password</a>
-                </div>
-
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; color: #4F46E5; font-size: 14px;">{reset_url}</p>
-
-                <div class="warning">
-                    <strong>Important:</strong> This link will expire in 30 minutes. If you didn't request a password reset, you can safely ignore this email.
-                </div>
-
-                <p>If you have any questions, please contact our support team.</p>
-
-                <div class="footer">
-                    <p>&copy; 2026 Goalixa. All rights reserved.</p>
-                    <p>This is an automated email. Please do not reply.</p>
-                </div>
-            </div>
-        </body>
-        </html>
+    def send_email_verification_email(
+        self, to: str, verify_token: str, app_url: str
+    ) -> bool:
         """
+        Send an email verification email.
 
-        subject = "Reset Your Goalixa Password"
-        return self.send_email(to, subject, html_body)
+        Args:
+            to: Recipient email address
+            verify_token: Email verification token
+            app_url: Base URL of the application
+
+        Returns:
+            True if email was sent successfully, False otherwise
+        """
+        # Create verification URL
+        verify_url = f"{app_url}/verify-email?token={verify_token}"
+
+        # Use template
+        html_body = EmailTemplates.verify_email(
+            verify_link=verify_url,
+            recipient_email=to
+        )
+
+        return self.send_email(to, "Verify Your Email Address", html_body)
+
+    def send_password_reset_confirmation_email(
+        self, to: str
+    ) -> bool:
+        """
+        Send a password reset confirmation email.
+
+        Args:
+            to: Recipient email address
+
+        Returns:
+            True if email was sent successfully, False otherwise
+        """
+        html_body = EmailTemplates.password_reset_confirmation(
+            recipient_email=to
+        )
+
+        return self.send_email(to, "Password Successfully Reset", html_body)
+
+    def send_welcome_email(
+        self, to: str, app_url: str = None
+    ) -> bool:
+        """
+        Send a welcome email to newly verified users.
+
+        Args:
+            to: Recipient email address
+            app_url: Base URL of the application
+
+        Returns:
+            True if email was sent successfully, False otherwise
+        """
+        if not app_url:
+            app_url = os.getenv("GOALIXA_APP_URL", "https://app.goalixa.com")
+
+        login_url = f"{app_url}/#/login"
+
+        html_body = EmailTemplates.welcome_user(
+            recipient_email=to,
+            login_link=login_url
+        )
+
+        return self.send_email(to, "Welcome to Goalixa!", html_body)
 
 
 # Global email service instance

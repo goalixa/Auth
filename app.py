@@ -1339,6 +1339,18 @@ def create_app():
         from auth.models import db
 
         db.session.commit()
+
+        # Send password reset confirmation email
+        try:
+            email_service.send_password_reset_confirmation_email(
+                to=reset_token.user.email
+            )
+        except Exception as e:
+            app.logger.warning(
+                "password reset confirmation email failed",
+                extra={"user_id": reset_token.user_id, "error": str(e)}
+            )
+
         app.logger.info(
             "api password reset confirm success",
             extra={"user_id": reset_token.user_id},
