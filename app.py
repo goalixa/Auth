@@ -42,6 +42,7 @@ from auth.models import (
     init_db,
 )
 from auth.oauth import init_oauth, oauth
+from auth.email_service import email_service
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data.db")
@@ -1276,17 +1277,29 @@ def create_app():
             return {"success": False, "error": "Email is required."}, 400
 
         user = User.query.filter_by(email=email).first()
-        reset_token_value = None
         if user:
             reset_token = create_reset_token(user)
-            reset_token_value = reset_token.token
             app.logger.info("api forgot reset issued", extra={"user_id": user.id})
+
+            # Send password reset email
+            app_url = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
+            email_sent = email_service.send_password_reset_email(
+                to=email,
+                reset_token=reset_token.token,
+                app_url=app_url
+            )
+
+            if email_sent:
+                app.logger.info("password reset email sent", extra={"user_id": user.id})
+            else:
+                app.logger.warning("password reset email failed", extra={"user_id": user.id})
         else:
             app.logger.info("api forgot unknown email", extra={"email": email})
+
+        # Return generic success message (don't reveal if email exists)
         return {
             "success": True,
-            "message": "If the account exists, a reset token is ready.",
-            "reset_token": reset_token_value,
+            "message": "If an account exists with this email, a password reset link has been sent.",
         }
 
     @app.route("/api/password-reset/request", methods=["POST"])
