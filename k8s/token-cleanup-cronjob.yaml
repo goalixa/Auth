@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: token-cleanup
+  namespace: goalixa-auth
+spec:
+  # Run daily at 2 AM UTC
+  schedule: "0 2 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        spec:
+          containers:
+          - name: cleanup
+            image: ghcr.io/goalixa/goalixa-auth:latest
+            imagePullPolicy: Always
+            command:
+            - python
+            - -c
+            - |
+              from app import create_app
+              from auth.models import cleanup_expired_tokens
+              import os
+
+              app = create_app()
+              with app.app_context():
+                  days_to_keep = int(os.getenv("CLEANUP_DAYS_TO_KEEP", "7"))
+                  deleted = cleanup_expired_tokens(days_to_keep=days_to_keep)
+                  print(f"Cleaned up {deleted} expired tokens (older than {days_to_keep} days)")
+            env:
+            - name: CLEANUP_DAYS_TO_KEEP
+              value: "7"
+            - name: AUTH_DATABASE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secrets
+                  key: AUTH_DATABASE_URI
+          restartPolicy: OnFailure

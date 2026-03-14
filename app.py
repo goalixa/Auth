@@ -37,9 +37,12 @@ from auth.models import (
     PasswordResetToken,
     RefreshToken,
     User,
+    cleanup_expired_tokens,
     create_email_verification_token,
     create_reset_token,
+    get_user_active_tokens,
     init_db,
+    revoke_all_user_tokens,
 )
 from auth.oauth import init_oauth, oauth
 from auth.email_service import email_service
@@ -781,6 +784,7 @@ def create_app():
             "api_refresh",
             "api_google_oauth_start",
             "api_google_oauth_callback",
+            "admin_cleanup_tokens",
         }
 
         # Skip auth check for public endpoints
@@ -833,6 +837,9 @@ def create_app():
                     if refresh_token_record and refresh_token_record.is_valid():
                         user = User.query.get(user_id)
                         if user and user.active:
+                            # Update last_seen_at timestamp
+                            refresh_token_record.last_seen_at = datetime.now(timezone.utc)
+
                             # Auto-issue new access token
                             new_access_token = create_access_token(
                                 user_id=user.id,
@@ -846,6 +853,10 @@ def create_app():
                             g.current_user = user
                             # Signal to set new access token cookie in after_request
                             g.new_access_token = new_access_token
+
+                            # Commit the timestamp update
+                            from auth.models import db
+                            db.session.commit()
 
                             app.logger.info(
                                 "auth user loaded via refresh token, access token refreshed",
@@ -937,7 +948,68 @@ def create_app():
         )
         return response
 
-    def create_auth_tokens(user):
+    def get_device_info(request):
+        """Extract device information from request."""
+        user_agent = request.headers.get("User-Agent", "")
+
+        # Detect device type from user agent
+        device_type = "desktop"
+        if any(mobile in user_agent.lower() for mobile in ["mobile", "android", "iphone"]):
+            device_type = "mobile"
+        elif any(tablet in user_agent.lower() for tablet in ["ipad", "tablet"]):
+            device_type = "tablet"
+
+        # Generate device name from user agent
+        import re
+
+        # Try to extract browser/device name
+        if "Chrome" in user_agent:
+            browser = "Chrome"
+        elif "Firefox" in user_agent:
+            browser = "Firefox"
+        elif "Safari" in user_agent and "Chrome" not in user_agent:
+            browser = "Safari"
+        elif "Edg" in user_agent:
+            browser = "Edge"
+        else:
+            browser = "Browser"
+
+        # Detect OS
+        if "Windows" in user_agent:
+            os_name = "Windows"
+        elif "Mac" in user_agent or "OS X" in user_agent:
+            os_name = "macOS"
+        elif "Linux" in user_agent:
+            os_name = "Linux"
+        elif "Android" in user_agent:
+            os_name = "Android"
+        elif "iOS" in user_agent or "iPhone" in user_agent or "iPad" in user_agent:
+            os_name = "iOS"
+        else:
+            os_name = "Unknown OS"
+
+        device_name = f"{browser} on {os_name}"
+
+        # Generate device fingerprint (simple hash of user agent + IP)
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+        if client_ip:
+            # Handle X-Forwarded-For which may contain multiple IPs
+            client_ip = client_ip.split(",")[0].strip()
+
+        device_fingerprint = hashlib.sha256(
+            f"{user_agent}:{client_ip}".encode()
+        ).hexdigest()[:32]
+
+        return {
+            "device_name": device_name,
+            "device_type": device_type,
+            "device_id": device_fingerprint,
+            "user_agent": user_agent[:500],  # Limit length
+            "ip_address": client_ip,
+        }
+
+    def create_auth_tokens(user, request=None):
+        """Create access and refresh tokens with device tracking."""
         # Create access token
         access_token = create_access_token(
             user_id=user.id,
@@ -948,7 +1020,7 @@ def create_app():
         AUTH_TOKEN_ISSUED_TOTAL.labels(token_type="access").inc()
 
         # Create refresh token
-        from auth.models import db
+        from auth.models import db, revoke_oldest_tokens
 
         refresh_token_str = create_refresh_token_string()
         refresh_token_jwt = create_refresh_token_jwt(
@@ -958,7 +1030,16 @@ def create_app():
             ttl_days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"],
         )
 
-        # Store refresh token in database
+        # Get device info from request
+        device_info = {}
+        if request:
+            device_info = get_device_info(request)
+
+        # Enforce max tokens per user (revoke oldest if needed)
+        max_tokens = int(get_config_value("AUTH_MAX_TOKENS_PER_USER", "5"))
+        revoke_oldest_tokens(user.id, max_tokens=max_tokens)
+
+        # Store refresh token in database with device info
         refresh_expires = datetime.now(timezone.utc) + timedelta(
             days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
         )
@@ -967,10 +1048,25 @@ def create_app():
             token_id=refresh_token_str,
             user_id=user.id,
             expires_at=refresh_expires,
+            device_name=device_info.get("device_name"),
+            device_type=device_info.get("device_type"),
+            device_id=device_info.get("device_id"),
+            user_agent=device_info.get("user_agent"),
+            ip_address=device_info.get("ip_address"),
+            last_seen_at=datetime.now(timezone.utc),
         )
         db.session.add(refresh_token)
         db.session.commit()
         AUTH_TOKEN_ISSUED_TOTAL.labels(token_type="refresh").inc()
+
+        app.logger.info(
+            "created auth tokens with device info",
+            extra={
+                "user_id": user.id,
+                "device_type": device_info.get("device_type"),
+                "device_name": device_info.get("device_name"),
+            },
+        )
 
         return access_token, refresh_token_jwt
 
@@ -1001,7 +1097,7 @@ def create_app():
         return response
 
     def issue_auth_json_response(user):
-        access_token, refresh_token_jwt = create_auth_tokens(user)
+        access_token, refresh_token_jwt = create_auth_tokens(user, request)
         app.logger.info(
             "issued auth json response with dual tokens",
             extra={"user_id": user.id, "email": user.email},
@@ -1010,7 +1106,7 @@ def create_app():
         return set_auth_cookies(response, access_token, refresh_token_jwt)
 
     def issue_auth_redirect_response(user, return_to):
-        access_token, refresh_token_jwt = create_auth_tokens(user)
+        access_token, refresh_token_jwt = create_auth_tokens(user, request)
         app.logger.info(
             "issued auth redirect response with dual tokens",
             extra={"user_id": user.id, "email": user.email, "return_to": return_to},
@@ -1397,6 +1493,135 @@ def create_app():
             )
         return response
 
+    @app.route("/api/sessions", methods=["GET"])
+    @auth_required()
+    def api_list_sessions():
+        """List all active sessions for the current user."""
+        tokens = get_user_active_tokens(g.current_user.id)
+        sessions = [token.to_dict() for token in tokens]
+
+        # Mark current session
+        refresh_cookie_name = app.config["AUTH_REFRESH_COOKIE_NAME"]
+        current_refresh_token = request.cookies.get(refresh_cookie_name)
+        if current_refresh_token:
+            payload, err = decode_refresh_token(
+                current_refresh_token, app.config["AUTH_JWT_SECRET"]
+            )
+            if not err and payload and "jti" in payload:
+                for session in sessions:
+                    # Use token_id to match (same as jti)
+                    if session.get("id") == int(payload.get("jti", 0)):
+                        session["is_current"] = True
+                        break
+
+        return {"success": True, "sessions": sessions}
+
+    @app.route("/api/sessions/<int:token_id>/revoke", methods=["POST"])
+    @auth_required()
+    def api_revoke_session(token_id):
+        """Revoke a specific session (refresh token)."""
+        # Prevent revoking the current session through this endpoint
+        refresh_cookie_name = app.config["AUTH_REFRESH_COOKIE_NAME"]
+        current_refresh_token = request.cookies.get(refresh_cookie_name)
+
+        if current_refresh_token:
+            payload, err = decode_refresh_token(
+                current_refresh_token, app.config["AUTH_JWT_SECRET"]
+            )
+            if not err and payload and "jti" in payload:
+                # Check if trying to revoke current session
+                current_token_id = int(payload.get("jti", 0))
+                if token_id == current_token_id:
+                    return {
+                        "success": False,
+                        "error": "Cannot revoke current session. Use /api/logout instead."
+                    }, 400
+
+        # Find and revoke the token
+        token = RefreshToken.query.filter_by(
+            id=token_id,
+            user_id=g.current_user.id
+        ).first()
+
+        if not token:
+            return {"success": False, "error": "Session not found."}, 404
+
+        if token.revoked_at:
+            return {"success": False, "error": "Session already revoked."}, 400
+
+        token.revoke()
+        from auth.models import db
+
+        db.session.commit()
+
+        app.logger.info(
+            "revoked session via API",
+            extra={"user_id": g.current_user.id, "token_id": token_id},
+        )
+
+        return {"success": True, "message": "Session revoked successfully."}
+
+    @app.route("/api/sessions/revoke-all", methods=["POST"])
+    @auth_required()
+    def api_revoke_all_sessions():
+        """Revoke all sessions except the current one."""
+        refresh_cookie_name = app.config["AUTH_REFRESH_COOKIE_NAME"]
+        current_refresh_token = request.cookies.get(refresh_cookie_name)
+
+        current_token_id = None
+        if current_refresh_token:
+            payload, err = decode_refresh_token(
+                current_refresh_token, app.config["AUTH_JWT_SECRET"]
+            )
+            if not err and payload and "jti" in payload:
+                current_token_id = int(payload.get("jti", 0))
+
+        # Revoke all tokens except current
+        tokens = RefreshToken.query.filter_by(
+            user_id=g.current_user.id,
+            revoked_at=None
+        ).all()
+
+        revoked_count = 0
+        for token in tokens:
+            if token.id != current_token_id:
+                token.revoke()
+                revoked_count += 1
+
+        from auth.models import db
+
+        db.session.commit()
+
+        app.logger.info(
+            "revoked all sessions via API",
+            extra={"user_id": g.current_user.id, "revoked_count": revoked_count},
+        )
+
+        return {
+            "success": True,
+            "message": f"Revoked {revoked_count} session(s).",
+            "revoked_count": revoked_count
+        }
+
+    @app.route("/admin/cleanup-tokens", methods=["POST"])
+    def admin_cleanup_tokens():
+        """Admin endpoint to clean up expired tokens."""
+        # Simple API key check for admin access
+        api_key = request.headers.get("X-Admin-API-Key")
+        admin_key = os.getenv("ADMIN_CLEANUP_API_KEY", "")
+
+        if api_key != admin_key:
+            return {"success": False, "error": "Unauthorized"}, 401
+
+        days_to_keep = int(request.args.get("days", "7"))
+        deleted = cleanup_expired_tokens(days_to_keep=days_to_keep)
+
+        return {
+            "success": True,
+            "message": f"Cleaned up {deleted} expired tokens.",
+            "deleted_count": deleted
+        }
+
     @app.route("/api/refresh", methods=["POST"])
     def api_refresh():
         """Exchange refresh token for new access token."""
@@ -1462,6 +1687,18 @@ def create_app():
         )
 
         # Rotate refresh token (issue new one, revoke old)
+        # Get device info from the old token to preserve it
+        device_info = {
+            "device_name": refresh_token.device_name,
+            "device_type": refresh_token.device_type,
+            "device_id": refresh_token.device_id,
+            "user_agent": refresh_token.user_agent,
+            "ip_address": refresh_token.ip_address,
+        }
+
+        # Update last_seen_at on old token before revoking
+        refresh_token.last_seen_at = datetime.now(timezone.utc)
+
         new_refresh_token_str = create_refresh_token_string()
         new_refresh_token_jwt = create_refresh_token_jwt(
             user_id=user.id,
@@ -1470,7 +1707,7 @@ def create_app():
             ttl_days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"],
         )
 
-        # Create new refresh token record
+        # Create new refresh token record with preserved device info
         new_refresh_expires = datetime.now(timezone.utc) + timedelta(
             days=app.config["AUTH_REFRESH_TOKEN_TTL_DAYS"]
         )
@@ -1479,6 +1716,12 @@ def create_app():
             token_id=new_refresh_token_str,
             user_id=user.id,
             expires_at=new_refresh_expires,
+            device_name=device_info.get("device_name"),
+            device_type=device_info.get("device_type"),
+            device_id=device_info.get("device_id"),
+            user_agent=device_info.get("user_agent"),
+            ip_address=device_info.get("ip_address"),
+            last_seen_at=datetime.now(timezone.utc),
         )
         db.session.add(new_db_token)
 

@@ -88,6 +88,14 @@ class RefreshToken(db.Model):
     revoked_at = db.Column(db.DateTime)
     replaced_by = db.Column(db.Integer, db.ForeignKey("refresh_token.id"))
 
+    # Device tracking for security
+    device_name = db.Column(db.String(255))  # User-friendly device name
+    device_type = db.Column(db.String(50))   # desktop, mobile, tablet
+    device_id = db.Column(db.String(100))    # Device fingerprint
+    user_agent = db.Column(db.String(500))   # Browser user agent
+    ip_address = db.Column(db.String(45))    # IP address (supports IPv6)
+    last_seen_at = db.Column(db.DateTime)    # Last activity timestamp
+
     user = db.relationship("User", back_populates="refresh_tokens")
 
     def is_valid(self):
@@ -97,6 +105,25 @@ class RefreshToken(db.Model):
     def revoke(self):
         """Mark token as revoked."""
         self.revoked_at = datetime.utcnow()
+
+    def get_device_info(self):
+        """Get human-readable device information."""
+        device = self.device_name or "Unknown Device"
+        if self.device_type:
+            device += f" ({self.device_type})"
+        return device
+
+    def to_dict(self):
+        """Convert token to dictionary for API responses."""
+        return {
+            "id": self.id,
+            "device": self.get_device_info(),
+            "device_type": self.device_type,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "is_current": self.revoked_at is None,
+        }
 
 
 def revoke_all_user_tokens(user_id):
@@ -109,6 +136,99 @@ def revoke_all_user_tokens(user_id):
         "revoked all user tokens",
         extra={"user_id": user_id, "count": len(tokens)},
     )
+
+
+def cleanup_expired_tokens(days_to_keep=7):
+    """
+    Remove expired and revoked tokens older than specified days.
+
+    Args:
+        days_to_keep: Keep tokens for this many days after expiry/revocation
+
+    Returns:
+        Number of tokens cleaned up
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days_to_keep)
+    deleted = RefreshToken.query.filter(
+        db.or_(
+            RefreshToken.revoked_at < cutoff,
+            RefreshToken.expires_at < cutoff
+        )
+    ).delete()
+    db.session.commit()
+    logger.info(
+        "cleaned up expired tokens",
+        extra={"deleted_count": deleted, "cutoff_days": days_to_keep}
+    )
+    return deleted
+
+
+def get_user_active_tokens(user_id):
+    """
+    Get all active (non-revoked) tokens for a user.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        List of active RefreshToken objects
+    """
+    return RefreshToken.query.filter_by(
+        user_id=user_id,
+        revoked_at=None
+    ).order_by(RefreshToken.created_at.desc()).all()
+
+
+def count_user_active_tokens(user_id):
+    """
+    Count active tokens for a user.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        Number of active tokens
+    """
+    return RefreshToken.query.filter_by(
+        user_id=user_id,
+        revoked_at=None
+    ).count()
+
+
+def revoke_oldest_tokens(user_id, max_tokens=5):
+    """
+    Revoke oldest tokens exceeding the maximum allowed.
+
+    Args:
+        user_id: User ID
+        max_tokens: Maximum number of active tokens to allow
+
+    Returns:
+        Number of tokens revoked
+    """
+    active_tokens = RefreshToken.query.filter_by(
+        user_id=user_id,
+        revoked_at=None
+    ).order_by(RefreshToken.created_at.asc()).all()
+
+    if len(active_tokens) <= max_tokens:
+        return 0
+
+    # Revoke oldest tokens
+    to_revoke = active_tokens[:len(active_tokens) - max_tokens]
+    for token in to_revoke:
+        token.revoke()
+
+    db.session.commit()
+    logger.info(
+        "revoked oldest tokens",
+        extra={
+            "user_id": user_id,
+            "revoked_count": len(to_revoke),
+            "max_tokens": max_tokens,
+        }
+    )
+    return len(to_revoke)
 
 
 def init_db(app):
