@@ -19,8 +19,9 @@ class User(db.Model):
     email_verified = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    refresh_tokens = db.relationship("RefreshToken", backref="user", lazy="dynamic")
-    email_verification_tokens = db.relationship("EmailVerificationToken", backref="user", lazy="dynamic")
+    refresh_tokens = db.relationship("RefreshToken", back_populates="user", lazy="dynamic")
+    email_verification_tokens = db.relationship("EmailVerificationToken", back_populates="user", lazy="dynamic")
+    reset_tokens = db.relationship("PasswordResetToken", back_populates="user", lazy="dynamic")
 
 
 class PasswordResetToken(db.Model):
@@ -32,7 +33,7 @@ class PasswordResetToken(db.Model):
     used_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship("User", backref="reset_tokens")
+    user = db.relationship("User", back_populates="reset_tokens")
 
     def is_valid(self):
         return self.used_at is None and self.expires_at >= datetime.utcnow()
@@ -57,7 +58,7 @@ class EmailVerificationToken(db.Model):
     used_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship("User", backref="verification_tokens")
+    user = db.relationship("User", back_populates="email_verification_tokens")
 
     def is_valid(self):
         return self.used_at is None and self.expires_at >= datetime.utcnow()
@@ -86,6 +87,8 @@ class RefreshToken(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     revoked_at = db.Column(db.DateTime)
     replaced_by = db.Column(db.Integer, db.ForeignKey("refresh_token.id"))
+
+    user = db.relationship("User", back_populates="refresh_tokens")
 
     def is_valid(self):
         """Check if token is not expired and not revoked."""
