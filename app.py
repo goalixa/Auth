@@ -623,6 +623,26 @@ def rate_limit(action, limit, window_seconds=60, block_duration_seconds=300):
     return decorator
 
 
+def auth_required():
+    """
+    Decorator to require authentication for endpoints.
+
+    Checks if g.current_user is set (by load_user before_request handler).
+    Returns 401 Unauthorized if not authenticated.
+    """
+    def decorator(f):
+        def wrapped(*args, **kwargs):
+            if not getattr(g, 'current_user', None):
+                return {"success": False, "error": "Authentication required."}, 401
+            return f(*args, **kwargs)
+
+        # Preserve function metadata
+        wrapped.__name__ = f.__name__
+        wrapped.__doc__ = f.__doc__
+        return wrapped
+
+    return decorator
+
 
 # ============= Password Validation =============
 def validate_password_complexity(password: str) -> tuple[bool, str]:
