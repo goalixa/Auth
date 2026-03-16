@@ -75,13 +75,16 @@ jobs:
           echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
-      - name: Configure kubectl
-        uses: azure/k8s-set-context@v4
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+      # Install kubectl and setup kubeconfig (only if KUBE_CONFIG secret exists)
+      - name: Setup kubectl
+        if: ${{ secrets.KUBE_CONFIG != '' }}
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
       - name: Update ArgoCD application
+        if: ${{ secrets.KUBE_CONFIG != '' }}
         run: |
           IMAGE_TAG="${{ steps.tag.outputs.tag }}"
 
@@ -121,9 +124,34 @@ jobs:
           echo "- **Image Tag:** \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Full Image:** \`${{ steps.tag.outputs.image }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Registry:** \`${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployment Method:** Helm (ArgoCD)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔄 ArgoCD will now:" >> $GITHUB_STEP_SUMMARY
-          echo "1. Detect Helm parameter change" >> $GITHUB_STEP_SUMMARY
-          echo "2. Render Helm chart with image tag: \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Deploy to Kubernetes" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ secrets.KUBE_CONFIG }}" ]; then
+            echo "- **Deployment Method:** Helm (ArgoCD - Auto-sync)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔄 ArgoCD will now:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Detect Helm parameter change" >> $GITHUB_STEP_SUMMARY
+            echo "2. Render Helm chart with image tag: \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "3. Deploy to Kubernetes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Deployment Method:** Helm (Manual sync required)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ Manual Action Required" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The \`KUBE_CONFIG\` secret is not configured. Please:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "1. **Add the secret** to your GitHub repository:" >> $GITHUB_STEP_SUMMARY
+            echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "   # Encode your kubeconfig" >> $GITHUB_STEP_SUMMARY
+            echo "   cat ~/.kube/config | base64 -w 0" >> $GITHUB_STEP_SUMMARY
+            echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "2. **Add it as a secret** named \`KUBE_CONFIG\` in repository settings" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "3. **Or manually trigger ArgoCD sync**:" >> $GITHUB_STEP_SUMMARY
+            echo "   \`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "   kubectl patch application goalixa-auth -n argocd --type='merge' \\" >> $GITHUB_STEP_SUMMARY
+            echo "     -p='{\"spec\":{\"source\":{\"helm\":{\"parameters\":[{\"name\":\"image.tag\",\"value\":\"${{ steps.tag.outputs.tag }}\"}]}}}}'" >> $GITHUB_STEP_SUMMARY
+            echo "   kubectl annotate application goalixa-auth -n argocd \"force-sync-at=\$(date +%s)\" --overwrite" >> $GITHUB_STEP_SUMMARY
+            echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
