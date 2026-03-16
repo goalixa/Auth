@@ -72,10 +72,8 @@ spec:
                   key: GOOGLE_REDIRECT_URI
 
           volumeMounts:
-            {{- if .Values.persistence.enabled }}
             - name: data
               mountPath: /app/instance
-            {{- end }}
 
           {{- with .Values.livenessProbe }}
           livenessProbe:
@@ -92,12 +90,10 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
 
-      {{- if .Values.persistence.enabled }}
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: auth-data
-      {{- end }}
 
       {{- with .Values.nodeSelector }}
       nodeSelector:

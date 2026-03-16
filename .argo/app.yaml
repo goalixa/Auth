@@ -44,7 +44,3 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/replicas  # Allow autoscaling to manage replicas
-    - group: ""
-      kind: PersistentVolumeClaim
-      jqPathExpressions:
-        - .spec.volumeName  # PVC volumeName is immutable when bound
