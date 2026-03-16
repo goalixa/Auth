@@ -75,16 +75,18 @@ jobs:
           echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
-      # Install kubectl and setup kubeconfig (only if KUBE_CONFIG secret exists)
       - name: Setup kubectl
-        if: ${{ secrets.KUBE_CONFIG != '' }}
         run: |
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > /tmp/kubeconfig
-          export KUBECONFIG=/tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+          if [ -n "${{ secrets.KUBE_CONFIG }}" ]; then
+            echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > /tmp/kubeconfig
+            echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+            echo "HAS_KUBE_CONFIG=true" >> $GITHUB_ENV
+          else
+            echo "HAS_KUBE_CONFIG=false" >> $GITHUB_ENV
+          fi
 
       - name: Update ArgoCD application
-        if: ${{ secrets.KUBE_CONFIG != '' }}
+        if: env.HAS_KUBE_CONFIG == 'true'
         run: |
           IMAGE_TAG="${{ steps.tag.outputs.tag }}"
 
@@ -126,7 +128,7 @@ jobs:
           echo "- **Registry:** \`${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -n "${{ secrets.KUBE_CONFIG }}" ]; then
+          if [ "${{ env.HAS_KUBE_CONFIG }}" = "true" ]; then
             echo "- **Deployment Method:** Helm (ArgoCD - Auto-sync)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🔄 ArgoCD will now:" >> $GITHUB_STEP_SUMMARY
