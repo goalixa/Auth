@@ -27,7 +27,7 @@ class EmailService:
 
     def send_email(self, to: str, subject: str, html_body: str) -> bool:
         """
-        Send an email via SMTP.
+        Send an email via SMTP
 
         Args:
             to: Recipient email address
