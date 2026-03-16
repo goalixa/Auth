@@ -1,0 +1,14 @@
+apiVersion: v2
+name: goalixa-auth
+description: Goalixa Authentication Service - Dual-token JWT auth with Google OAuth
+type: application
+version: 1.0.0
+appVersion: "1.0"
+keywords:
+  - auth
+  - authentication
+  - jwt
+  - oauth
+maintainers:
+  - name: Goalixa
+    email: dev@goalixa.com

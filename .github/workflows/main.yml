@@ -1,25 +1,26 @@
-name: Build & Deploy Auth
+name: Build & Deploy Auth (Helm)
 
 on:
   push:
     branches:
       - main
     paths-ignore:
-      - 'k8s/kustomization.yaml'
       - '.github/**'
       - '**.md'
       - '.argo/**'
+      - 'helm/**'  # Ignore Helm chart changes to avoid loop
   pull_request:
     branches:
       - main
     paths-ignore:
-      - 'k8s/kustomization.yaml'
       - '.github/**'
       - '**.md'
       - '.argo/**'
+      - 'helm/**'
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 env:
   REGISTRY: harbor.goalixa.com
@@ -67,32 +68,62 @@ jobs:
             org.opencontainers.image.source=${{ github.repositoryUrl }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Update Kustomize image tag
+      - name: Get image tag
+        id: tag
         run: |
-          # Get the short SHA without prefix (matches Docker metadata tag format)
           IMAGE_TAG="${GITHUB_SHA:0:7}"
-          # Update the kustomization file with the new image tag
-          sed -i.bak "s/newTag: .*/newTag: ${IMAGE_TAG}/" k8s/kustomization.yaml
-          rm -f k8s/kustomization.yaml.bak
-          echo "✓ Updated k8s/kustomization.yaml with newTag: ${IMAGE_TAG}"
-          grep "newTag:" k8s/kustomization.yaml
+          echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
-      - name: Commit and push Kustomize changes
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Update ArgoCD application
         run: |
-          IMAGE_TAG="${GITHUB_SHA:0:7}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add k8s/kustomization.yaml
-          git commit -m "chore: update image tag to ${IMAGE_TAG} [skip ci]"
-          # Pull latest changes to avoid race conditions
-          git pull --rebase origin main
-          git push origin main
-          echo "✓ Pushed changes - ArgoCD will now deploy the new image"
+          IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+
+          echo "🔄 Updating ArgoCD application with image tag: ${IMAGE_TAG}"
+
+          # Patch ArgoCD app with new Helm parameter
+          kubectl patch application goalixa-auth \
+            -n argocd \
+            --type='merge' \
+            -p="{
+              \"spec\": {
+                \"source\": {
+                  \"helm\": {
+                    \"parameters\": [
+                      {
+                        \"name\": \"image.tag\",
+                        \"value\": \"${IMAGE_TAG}\"
+                      }
+                    ]
+                  }
+                }
+              }
+            }"
+
+          # Trigger immediate sync
+          kubectl annotate application goalixa-auth \
+            -n argocd \
+            "force-sync-at=$(date +%s)" \
+            --overwrite
+
+          echo "✅ ArgoCD application updated"
 
       - name: Summary
         run: |
           echo "## ✅ Build & Deploy Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image Tag:** \`${GITHUB_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag:** \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Full Image:** \`${{ steps.tag.outputs.image }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Registry:** \`${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **ArgoCD:** Syncing..." >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Method:** Helm (ArgoCD)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔄 ArgoCD will now:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Detect Helm parameter change" >> $GITHUB_STEP_SUMMARY
+          echo "2. Render Helm chart with image tag: \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Deploy to Kubernetes" >> $GITHUB_STEP_SUMMARY

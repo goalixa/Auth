@@ -13,7 +13,14 @@ spec:
   source:
     repoURL: https://github.com/goalixa/Auth.git
     targetRevision: main
-    path: k8s
+    path: helm
+    helm:
+      valueFiles:
+        - values.yaml
+      # Image tag is updated by GitHub workflow via kubectl patch
+      parameters:
+        - name: image.tag
+          value: latest  # Default, overridden by workflow
   destination:
     server: https://kubernetes.default.svc
     namespace: goalixa-auth
@@ -21,6 +28,7 @@ spec:
     automated:
       prune: true
       selfHeal: true
+      allowEmpty: false
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
@@ -30,3 +38,9 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
+  # Ignore differences that shouldn't trigger sync
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Allow autoscaling to manage replicas

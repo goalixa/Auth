@@ -1,0 +1,147 @@
+# Default values for goalixa-auth
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Image configuration
+image:
+  registry: harbor.goalixa.com
+  repository: goalixa-auth/auth
+  tag: "latest"  # Overridden by ConfigMap/ArgoCD
+  pullPolicy: Always
+
+# Image pull secret for private registry
+imagePullSecrets:
+  - name: harbor-pull
+
+# Deployment configuration
+replicaCount: 1
+
+# Container configuration
+container:
+  port: 5001
+
+# Environment variables (ConfigMap)
+env:
+  # Flask configuration
+  LOG_LEVEL: "INFO"
+
+  # Auth service configuration
+  GOALIXA_APP_URL: "https://app.goalixa.com"
+  AUTH_OAUTH_RETURN_TO_ALLOWLIST: ""
+
+  # Legacy single-token TTL (deprecated)
+  AUTH_JWT_TTL_MINUTES: "120"
+  AUTH_COOKIE_NAME: "goalixa_auth"
+
+  # Dual-token authentication
+  AUTH_ACCESS_TOKEN_TTL_MINUTES: "15"
+  AUTH_REFRESH_TOKEN_TTL_DAYS: "7"
+  AUTH_ACCESS_COOKIE_NAME: "goalixa_access"
+  AUTH_REFRESH_COOKIE_NAME: "goalixa_refresh"
+
+  # Cookie settings
+  AUTH_COOKIE_SAMESITE: "Lax"
+  AUTH_COOKIE_SECURE: "1"
+  AUTH_COOKIE_DOMAIN: ".goalixa.com"
+
+  # Features
+  REGISTERABLE: "1"
+
+  # Server configuration
+  PORT: "5001"
+  FORCE_SSL: "true"
+  PREFERRED_URL_SCHEME: "https"
+
+# Secret references (already existing in cluster)
+# These secrets must be created manually:
+# kubectl create secret generic auth-secrets \
+#   --from-literal=AUTH_JWT_SECRET=<jwt-secret> \
+#   --from-literal=AUTH_SECRET_KEY=<secret-key> \
+#   --from-literal=AUTH_DATABASE_URI=<database-uri> \
+#   --from-literal=GOOGLE_CLIENT_ID=<client-id> \
+#   --from-literal=GOOGLE_CLIENT_SECRET=<client-secret> \
+#   --from-literal=GOOGLE_REDIRECT_URI=<redirect-uri> \
+#   -n goalixa-auth
+secretName: auth-secrets
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: http
+
+# Ingress configuration (optional)
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: auth.goalixa.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: auth-tls
+  #    hosts:
+  #      - auth.goalixa.com
+
+# Persistent storage
+persistence:
+  enabled: true
+  storageClass: local-path
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+# Health probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Autoscaling (optional)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Namespace
+namespace:
+  name: goalixa-auth
+
+# CronJob for token cleanup
+cronJob:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  cleanupDaysToKeep: 7

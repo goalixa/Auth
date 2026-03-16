@@ -1,22 +1,28 @@
+{{- if .Values.cronJob.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: token-cleanup
-  namespace: goalixa-auth
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "goalixa-auth.labels" . | nindent 4 }}
 spec:
-  # Run daily at 2 AM UTC
-  schedule: "0 2 * * *"
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 1
+  schedule: "{{ .Values.cronJob.schedule }}"
+  successfulJobsHistoryLimit: {{ .Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJob.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
       backoffLimit: 3
       template:
         spec:
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
           - name: cleanup
-            image: ghcr.io/goalixa/goalixa-auth:latest
-            imagePullPolicy: Always
+            image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+            imagePullPolicy: {{ .Values.image.pullPolicy }}
             command:
             - python
             - -c
@@ -32,10 +38,11 @@ spec:
                   print(f"Cleaned up {deleted} expired tokens (older than {days_to_keep} days)")
             env:
             - name: CLEANUP_DAYS_TO_KEEP
-              value: "7"
+              value: "{{ .Values.cronJob.cleanupDaysToKeep }}"
             - name: AUTH_DATABASE_URI
               valueFrom:
                 secretKeyRef:
-                  name: auth-secrets
+                  name: {{ .Values.secretName }}
                   key: AUTH_DATABASE_URI
           restartPolicy: OnFailure
+{{- end }}

@@ -1,0 +1,38 @@
+# Staging values for goalixa-auth
+# Override default values for staging environment
+
+image:
+  tag: "latest"  # Overridden by ConfigMap
+
+replicaCount: 1
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+
+env:
+  LOG_LEVEL: "DEBUG"
+  FORCE_SSL: "true"
+  AUTH_COOKIE_SECURE: "1"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+  hosts:
+    - host: auth-staging.goalixa.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: auth-tls-staging
+      hosts:
+        - auth-staging.goalixa.com
