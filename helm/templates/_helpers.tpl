@@ -33,7 +33,7 @@ Common labels
 */}}
 {{- define "goalixa-auth.labels" -}}
 helm.sh/chart: {{ include "goalixa-auth.chart" . }}
-{{ include "goalixa-auth.selectorLabels" . }}
+app: auth
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -41,9 +41,8 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Selector labels
+Selector labels - MUST match existing deployment selector
 */}}
 {{- define "goalixa-auth.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "goalixa-auth.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+app: auth
 {{- end }}
