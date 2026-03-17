@@ -34,43 +34,6 @@ spec:
             - configMapRef:
                 name: auth-config
 
-          env:
-            - name: AUTH_DATABASE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: AUTH_DATABASE_URI
-
-            - name: AUTH_JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: AUTH_JWT_SECRET
-
-            - name: AUTH_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: AUTH_SECRET_KEY
-
-            - name: GOOGLE_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: GOOGLE_CLIENT_ID
-
-            - name: GOOGLE_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: GOOGLE_CLIENT_SECRET
-
-            - name: GOOGLE_REDIRECT_URI
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: GOOGLE_REDIRECT_URI
-
           volumeMounts:
             - name: data
               mountPath: /app/instance

@@ -52,18 +52,6 @@ env:
   FORCE_SSL: "true"
   PREFERRED_URL_SCHEME: "https"
 
-# Secret references (already existing in cluster)
-# These secrets must be created manually:
-# kubectl create secret generic auth-secrets \
-#   --from-literal=AUTH_JWT_SECRET=<jwt-secret> \
-#   --from-literal=AUTH_SECRET_KEY=<secret-key> \
-#   --from-literal=AUTH_DATABASE_URI=<database-uri> \
-#   --from-literal=GOOGLE_CLIENT_ID=<client-id> \
-#   --from-literal=GOOGLE_CLIENT_SECRET=<client-secret> \
-#   --from-literal=GOOGLE_REDIRECT_URI=<redirect-uri> \
-#   -n goalixa-auth
-secretName: auth-secrets
-
 # Service configuration
 service:
   type: ClusterIP
