@@ -39,10 +39,10 @@ spec:
             env:
             - name: CLEANUP_DAYS_TO_KEEP
               value: "{{ .Values.cronJob.cleanupDaysToKeep }}"
-            - name: AUTH_DATABASE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: AUTH_DATABASE_URI
+            envFrom:
+            - secretRef:
+                name: auth-secrets
+            - configMapRef:
+                name: auth-config
           restartPolicy: OnFailure
 {{- end }}
