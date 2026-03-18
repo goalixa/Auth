@@ -44,3 +44,8 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/replicas  # Allow autoscaling to manage replicas
+    - group: ""
+      kind: Secret
+      name: auth-secrets
+      jsonPointers:
+        - /data  # Allow manual secret management
