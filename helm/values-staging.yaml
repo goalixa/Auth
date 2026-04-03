@@ -2,9 +2,12 @@
 # Override default values for staging environment
 
 image:
-  tag: "latest"  # Overridden by ConfigMap
+  tag: "latest"  # Overridden by GitHub workflow
 
 replicaCount: 1
+
+namespace:
+  name: goalixa-auth-staging
 
 resources:
   limits:

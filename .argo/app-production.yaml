@@ -8,6 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/name: auth
     app.kubernetes.io/part-of: goalixa
+    environment: production
 spec:
   project: default
   source:
@@ -16,8 +17,7 @@ spec:
     path: helm
     helm:
       valueFiles:
-        - values.yaml
-      # Image tag is updated by GitHub workflow via kubectl patch
+        - values-production.yaml
       parameters:
         - name: image.tag
           value: latest  # Default, overridden by workflow
@@ -31,6 +31,7 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
       - RespectIgnoreDifferences=true
     retry:
       limit: 5
@@ -38,7 +39,6 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-  # Ignore differences that shouldn't trigger sync
   ignoreDifferences:
     - group: apps
       kind: Deployment

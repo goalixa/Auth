@@ -36,6 +36,7 @@ from auth.models import (
     EmailVerificationToken,
     PasswordResetToken,
     RefreshToken,
+    SyntraUser,
     User,
     cleanup_expired_tokens,
     create_email_verification_token,
@@ -805,6 +806,8 @@ def create_app():
             "api_google_oauth_start",
             "api_google_oauth_callback",
             "admin_cleanup_tokens",
+            "api_syntra_login",
+            "api_syntra_admin_create_user",
         }
 
         # Skip auth check for public endpoints
@@ -1837,6 +1840,320 @@ def create_app():
         else:
             app.logger.error("api verify email user not found", extra={"user_id": verification_token.user_id})
             return {"success": False, "error": "User not found."}, 404
+
+    # ============= Syntra API Endpoints =============
+
+    def _validate_syntra_admin_request():
+        """Validate Syntra admin request using API key or JWT token."""
+        # Check for API key first (for service-to-service communication)
+        api_key = request.headers.get("X-Syntra-Admin-API-Key")
+        expected_key = os.getenv("SYNTRA_ADMIN_API_KEY", "")
+
+        if api_key and api_key == expected_key:
+            return True, None
+
+        # Fall back to JWT token validation
+        if g.current_user:
+            # Check if user has Syntra admin role
+            syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
+            if syntra_profile and syntra_profile.role == "admin" and syntra_profile.active:
+                return True, g.current_user
+
+        return False, None
+
+    @app.route("/api/syntra/admin/create-user", methods=["POST"])
+    def api_syntra_admin_create_user():
+        """
+        Create a new Syntra user.
+
+        Requires X-Syntra-Admin-API-Key header or admin JWT token.
+
+        Request body:
+        {
+            "email": "user@example.com",
+            "password": "SecurePass123!",
+            "role": "operator",  // admin, operator, viewer
+            "department": "devops" (optional)
+        }
+        """
+        is_admin, admin_user = _validate_syntra_admin_request()
+        if not is_admin:
+            app.logger.warning("syntra admin create user: unauthorized")
+            return {"success": False, "error": "Unauthorized. Admin access required."}, 401
+
+        data = request.get_json(silent=True) or {}
+
+        # Sanitize and validate inputs
+        email = sanitize_email(data.get("email", ""))
+        password = sanitize_password(data.get("password", ""))
+        role = sanitize_string_input(data.get("role", "operator"), max_length=50)
+        department = sanitize_string_input(data.get("department", ""), max_length=100)
+
+        if not email or not password:
+            app.logger.warning("syntra admin create user: missing fields")
+            return {"success": False, "error": "Email and password are required."}, 400
+
+        # Validate role
+        valid_roles = {"admin", "operator", "viewer"}
+        if role not in valid_roles:
+            app.logger.warning("syntra admin create user: invalid role", extra={"role": role})
+            return {"success": False, "error": f"Invalid role. Must be one of: {', '.join(valid_roles)}"}, 400
+
+        # Validate password complexity
+        is_valid, error_msg = validate_password_complexity(password)
+        if not is_valid:
+            app.logger.warning("syntra admin create user: weak password")
+            return {"success": False, "error": error_msg}, 400
+
+        # Check if user already exists
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            # Check if user already has a Syntra profile
+            existing_syntra = SyntraUser.query.filter_by(user_id=existing.id).first()
+            if existing_syntra:
+                app.logger.warning("syntra admin create user: already exists", extra={"email": email})
+                return {"success": False, "error": "User already has a Syntra profile."}, 409
+            # Create Syntra profile for existing user
+            user = existing
+        else:
+            # Create new user
+            user = User(
+                email=email,
+                password_hash=generate_password_hash(password),
+                active=True,
+                email_verified=True,  # Admin-created users are pre-verified
+            )
+            from auth.models import db
+            db.session.add(user)
+            try:
+                db.session.flush()  # Get the user ID without committing
+            except IntegrityError:
+                db.session.rollback()
+                app.logger.warning("syntra admin create user: integrity error", extra={"email": email})
+                return {"success": False, "error": "Email already registered."}, 409
+
+        # Create or update Syntra profile
+        creator_id = admin_user.id if admin_user else None
+        syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
+
+        if syntra_profile:
+            # Update existing profile
+            syntra_profile.role = role
+            syntra_profile.department = department
+            syntra_profile.active = True
+            app.logger.info("syntra admin: updated existing user profile", extra={"user_id": user.id})
+        else:
+            # Create new Syntra profile
+            syntra_profile = SyntraUser(
+                user_id=user.id,
+                role=role,
+                department=department,
+                created_by=creator_id,
+                active=True,
+            )
+            from auth.models import db
+            db.session.add(syntra_profile)
+            app.logger.info("syntra admin: created new user", extra={"user_id": user.id, "role": role})
+
+        from auth.models import db
+        db.session.commit()
+
+        return {
+            "success": True,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "syntra_role": syntra_profile.role,
+                "department": syntra_profile.department,
+                "active": syntra_profile.active,
+            }
+        }, 201
+
+    @app.route("/api/syntra/login", methods=["POST"])
+    @rate_limit(action="syntra_login", limit=5, window_seconds=300, block_duration_seconds=900)
+    def api_syntra_login():
+        """
+        Syntra-specific login endpoint.
+
+        Returns user with Syntra role information.
+
+        Request body:
+        {
+            "email": "user@example.com",
+            "password": "password"
+        }
+        """
+        data = request.get_json(silent=True) or {}
+
+        # Sanitize inputs
+        email = sanitize_email(data.get("email", ""))
+        password = sanitize_password(data.get("password", ""))
+
+        if not email or not password:
+            app.logger.warning("syntra login: missing credentials")
+            AUTH_LOGIN_TOTAL.labels(status="missing_credentials").inc()
+            return {"success": False, "error": "Email and password are required."}, 400
+
+        # Fetch user
+        user = User.query.filter_by(email=email).first()
+
+        # Use constant-time password verification
+        dummy_hash = generate_password_hash("dummy_password_for_timing_attack_prevention")
+        password_valid = False
+        if user:
+            password_valid = check_password_hash(user.password_hash, password)
+        else:
+            check_password_hash(dummy_hash, password)
+
+        if not password_valid or not user:
+            app.logger.warning("syntra login: invalid credentials", extra={"email": email})
+            AUTH_LOGIN_TOTAL.labels(status="failed_credentials").inc()
+            AUTH_FAILURES_TOTAL.labels(failure_type="syntra_invalid_credentials").inc()
+            return {"success": False, "error": "Invalid email or password."}, 401
+
+        if not user.active:
+            app.logger.warning("syntra login: inactive user", extra={"user_id": user.id})
+            AUTH_LOGIN_TOTAL.labels(status="failed_inactive").inc()
+            AUTH_FAILURES_TOTAL.labels(failure_type="account_inactive").inc()
+            return {"success": False, "error": "Your account is inactive."}, 403
+
+        # Check if user has a Syntra profile
+        syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
+        if not syntra_profile or not syntra_profile.active:
+            app.logger.warning("syntra login: no active syntra profile", extra={"user_id": user.id})
+            AUTH_FAILURES_TOTAL.labels(failure_type="syntra_no_profile").inc()
+            return {"success": False, "error": "User does not have an active Syntra profile."}, 403
+
+        AUTH_LOGIN_TOTAL.labels(status="success").inc()
+
+        # Create auth tokens
+        access_token, refresh_token_jwt = create_auth_tokens(user, request)
+
+        return {
+            "success": True,
+            "access_token": access_token,
+            "refresh_token": refresh_token_jwt,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "role": syntra_profile.role,
+                "department": syntra_profile.department,
+                "active": syntra_profile.active,
+            }
+        }
+
+    @app.route("/api/syntra/validate", methods=["GET", "POST"])
+    @auth_required()
+    def api_syntra_validate():
+        """
+        Validate JWT token and return user information with Syntra profile.
+
+        Requires Bearer token in Authorization header.
+        """
+        if not g.current_user:
+            return {"valid": False, "error": "No valid token provided"}, 401
+
+        # Get Syntra profile
+        syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
+        if not syntra_profile or not syntra_profile.active:
+            app.logger.warning("syntra validate: no active syntra profile", extra={"user_id": g.current_user.id})
+            return {"valid": False, "error": "User does not have an active Syntra profile"}, 403
+
+        return {
+            "valid": True,
+            "user": {
+                "id": g.current_user.id,
+                "email": g.current_user.email,
+                "role": syntra_profile.role,
+                "department": syntra_profile.department,
+                "active": syntra_profile.active,
+            }
+        }
+
+    @app.route("/api/syntra/users", methods=["GET"])
+    @auth_required()
+    def api_syntra_list_users():
+        """
+        List all Syntra users.
+
+        Requires admin role.
+        """
+        # Check if current user is Syntra admin
+        syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
+        if not syntra_profile or syntra_profile.role != "admin":
+            return {"success": False, "error": "Admin access required"}, 403
+
+        # Get all Syntra users
+        syntra_users = SyntraUser.query.all()
+        users = [profile.to_dict() for profile in syntra_users]
+
+        return {"success": True, "users": users}
+
+    @app.route("/api/syntra/users/<int:user_id>", methods=["GET"])
+    @auth_required()
+    def api_syntra_get_user(user_id):
+        """
+        Get a specific Syntra user by ID.
+
+        Requires admin role or own user ID.
+        """
+        # Check permissions
+        syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
+        is_admin = syntra_profile and syntra_profile.role == "admin"
+        is_self = g.current_user.id == user_id
+
+        if not is_admin and not is_self:
+            return {"success": False, "error": "Access denied"}, 403
+
+        # Get requested user's Syntra profile
+        target_profile = SyntraUser.query.filter_by(user_id=user_id).first()
+        if not target_profile:
+            return {"success": False, "error": "User not found"}, 404
+
+        return {"success": True, "user": target_profile.to_dict()}
+
+    @app.route("/api/syntra/users/<int:user_id>", methods=["PATCH"])
+    @auth_required()
+    def api_syntra_update_user(user_id):
+        """
+        Update a Syntra user's profile.
+
+        Requires admin role.
+        """
+        # Check if current user is Syntra admin
+        syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
+        if not syntra_profile or syntra_profile.role != "admin":
+            return {"success": False, "error": "Admin access required"}, 403
+
+        # Get target user
+        target_profile = SyntraUser.query.filter_by(user_id=user_id).first()
+        if not target_profile:
+            return {"success": False, "error": "User not found"}, 404
+
+        data = request.get_json(silent=True) or {}
+
+        # Update allowed fields
+        if "role" in data:
+            role = sanitize_string_input(data["role"], max_length=50)
+            if role not in {"admin", "operator", "viewer"}:
+                return {"success": False, "error": "Invalid role"}, 400
+            target_profile.role = role
+
+        if "department" in data:
+            target_profile.department = sanitize_string_input(data["department"], max_length=100)
+
+        if "active" in data:
+            target_profile.active = bool(data["active"])
+
+        from auth.models import db
+        db.session.commit()
+
+        app.logger.info(
+            "syntra admin: updated user",
+            extra={"target_user_id": user_id, "admin_id": g.current_user.id}
+        )
+
+        return {"success": True, "user": target_profile.to_dict()}
 
     return app
 
