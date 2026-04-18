@@ -145,14 +145,14 @@ jobs:
           echo "- **Image Tag:** \`${IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Full Image:** \`${{ env.REGISTRY }}/${{ steps.config.outputs.repository }}:${IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Registry:** \`${{ env.REGISTRY }}/${{ steps.config.outputs.repository }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **ArgoCD App:** \`${{ steps.config.outputs.app_name }\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **ArgoCD App:** \`${{ steps.config.outputs.app_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ env.HAS_KUBE_CONFIG }}" = "true" ]; then
             echo "- **Deployment Method:** Helm (ArgoCD - Auto-sync)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🔄 ArgoCD will now:" >> $GITHUB_STEP_SUMMARY
-            echo "1. Detect Helm parameter change for \`${{ steps.config.outputs.app_name }\`" >> $GITHUB_STEP_SUMMARY
+            echo "1. Detect Helm parameter change for \`${{ steps.config.outputs.app_name }}\`" >> $GITHUB_STEP_SUMMARY
             echo "2. Render Helm chart with image tag: \`${IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
             echo "3. Deploy to Kubernetes namespace: \`${ENVIRONMENT}\`" >> $GITHUB_STEP_SUMMARY
           else
