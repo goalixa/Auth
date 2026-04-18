@@ -1,6 +1,6 @@
 """
 Metrics Helper Module for Goalixa Auth Service
-Provides convenient functions for recording Prometheus metrics.
+Provides convenient functions for recording Prometheus metrics..
 """
 import time
 from contextlib import contextmanager
