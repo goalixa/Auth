@@ -27,7 +27,7 @@ class EmailTemplates:
         show_link: bool = False,
         footer_text: str = None
     ) -> str:
-        """Base email template structure"""
+        """Base email template structure."""
         year = datetime.now().year
 
         button_html = ""
