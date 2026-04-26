@@ -8,7 +8,7 @@ from typing import Dict
 
 
 class EmailTemplates:
-    """HTML email templates for Goalixa"""
+    """HTML email templates for Goalixa."""
 
     APP_NAME = "Goalixa"
     PRIMARY_COLOR = "#111827"
