@@ -77,7 +77,7 @@ ingress:
 # Persistent storage
 persistence:
   enabled: true
-  storageClass: local-path
+  storageClass: longhorn-v2
   accessMode: ReadWriteOnce
   size: 1Gi
 
