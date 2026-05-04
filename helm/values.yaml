@@ -52,6 +52,13 @@ env:
   FORCE_SSL: "true"
   PREFERRED_URL_SCHEME: "https"
 
+  # Email configuration (Postmark SMTP)
+  EMAIL_ENABLED: "1"
+  EMAIL_SMTP_HOST: "smtp.postmarkapp.com"
+  EMAIL_SMTP_PORT: "587"
+  EMAIL_FROM: "Goalixa <noreply@goalixa.com>"
+  EMAIL_USE_TLS: "1"
+
 # Service configuration
 service:
   type: ClusterIP

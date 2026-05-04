@@ -2,9 +2,14 @@
 # Override default values for staging environment
 
 image:
-  tag: "latest"  # Overridden by ConfigMap
+  registry: harbor.goalixa.com
+  repository: auth-staging/auth
+  tag: "latest"
 
 replicaCount: 1
+
+namespace:
+  name: goalixa-auth-staging
 
 resources:
   limits:
