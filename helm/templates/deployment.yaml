@@ -35,6 +35,8 @@ spec:
                 name: auth-secrets
             - configMapRef:
                 name: auth-config
+            - secretRef:
+                name: auth-email-secret
 
           volumeMounts:
             - name: data
