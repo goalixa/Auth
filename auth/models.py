@@ -22,6 +22,45 @@ class User(db.Model):
     refresh_tokens = db.relationship("RefreshToken", back_populates="user", lazy="dynamic")
     email_verification_tokens = db.relationship("EmailVerificationToken", back_populates="user", lazy="dynamic")
     reset_tokens = db.relationship("PasswordResetToken", back_populates="user", lazy="dynamic")
+    syntra_profile = db.relationship("SyntraUser", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    created_syntra_users = db.relationship("SyntraUser", foreign_keys="SyntraUser.created_by", backref="creator")
+
+
+class SyntraUser(db.Model):
+    """
+    Syntra-specific user profile with role-based access control.
+
+    Roles:
+    - admin: Full access to all Syntra features
+    - operator: Can execute DevOps operations
+    - viewer: Read-only access to dashboards and reports
+    """
+    __tablename__ = "syntra_user"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    role = db.Column(db.String(50), nullable=False, default="operator")
+    department = db.Column(db.String(100))
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    active = db.Column(db.Boolean, default=True)
+
+    user = db.relationship("User", foreign_keys=[user_id], back_populates="syntra_profile")
+
+    def to_dict(self):
+        """Convert to dictionary for API responses."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "email": self.user.email if self.user else None,
+            "role": self.role,
+            "department": self.department,
+            "active": self.active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    def is_valid_role(self) -> bool:
+        """Check if the role is valid."""
+        return self.role in {"admin", "operator", "viewer"}
 
 
 class PasswordResetToken(db.Model):

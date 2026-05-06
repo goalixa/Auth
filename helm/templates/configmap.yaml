@@ -35,3 +35,10 @@ data:
   PORT: "{{ .Values.env.PORT }}"
   FORCE_SSL: "{{ .Values.env.FORCE_SSL }}"
   PREFERRED_URL_SCHEME: "{{ .Values.env.PREFERRED_URL_SCHEME }}"
+
+  # Email configuration
+  EMAIL_ENABLED: "{{ .Values.env.EMAIL_ENABLED }}"
+  EMAIL_SMTP_HOST: "{{ .Values.env.EMAIL_SMTP_HOST }}"
+  EMAIL_SMTP_PORT: "{{ .Values.env.EMAIL_SMTP_PORT }}"
+  EMAIL_FROM: "{{ .Values.env.EMAIL_FROM }}"
+  EMAIL_USE_TLS: "{{ .Values.env.EMAIL_USE_TLS }}"
