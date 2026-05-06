@@ -22,7 +22,7 @@ class User(db.Model):
     refresh_tokens = db.relationship("RefreshToken", back_populates="user", lazy="dynamic")
     email_verification_tokens = db.relationship("EmailVerificationToken", back_populates="user", lazy="dynamic")
     reset_tokens = db.relationship("PasswordResetToken", back_populates="user", lazy="dynamic")
-    syntra_profile = db.relationship("SyntraUser", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    syntra_profile = db.relationship("SyntraUser", foreign_keys="SyntraUser.user_id", back_populates="user", uselist=False, cascade="all, delete-orphan")
     created_syntra_users = db.relationship("SyntraUser", foreign_keys="SyntraUser.created_by", backref="creator")
 
 
