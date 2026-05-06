@@ -1426,10 +1426,18 @@ def create_app():
 
         # Return auth response along with verification token
         response = issue_auth_json_response(user)
-        response["verification_token"] = verification_token.token
-        response["email_verified"] = user.email_verified
-        response["message"] = "Registration successful. Please check your email to verify your account."
-        return response
+        # Get the JSON data from the response - Flask Response stores data as bytes
+        response_data = json.loads(response.get_data(as_text=True))
+        # Add verification fields
+        response_data["verification_token"] = verification_token.token
+        response_data["email_verified"] = user.email_verified
+        response_data["message"] = "Registration successful. Please check your email to verify your account."
+        # Create new response with the modified data
+        new_response = make_response(json.dumps(response_data))
+        # Copy cookies from original response
+        for cookie in response.headers.getlist('Set-Cookie'):
+            new_response.headers.add('Set-Cookie', cookie)
+        return new_response
 
     @app.route("/api/forgot", methods=["POST"])
     @rate_limit(action="password_reset_request", limit=3, window_seconds=300, block_duration_seconds=900)
