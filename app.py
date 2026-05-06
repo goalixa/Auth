@@ -407,6 +407,18 @@ PASSWORD_RESET_CONFIRM_TOTAL = Counter(
     ["status"],  # status: success, failed_invalid, failed_expired
 )
 
+# ============= Email Verification Metrics =============
+EMAIL_VERIFICATION_TOTAL = Counter(
+    "goalixa_auth_email_verification_total",
+    "Total email verification attempts",
+    ["status"],  # status: success, failed_invalid, failed_expired
+)
+EMAIL_VERIFICATION_RESEND_TOTAL = Counter(
+    "goalixa_auth_email_verification_resend_total",
+    "Total email verification resend requests",
+    ["status"],  # status: success, failed_already_verified
+)
+
 # ============= Database Metrics =============
 DB_QUERY_DURATION_SECONDS = Histogram(
     "goalixa_auth_db_query_duration_seconds",
@@ -804,6 +816,8 @@ def create_app():
             "api_refresh",
             "api_google_oauth_start",
             "api_google_oauth_callback",
+            "api_verify_email",
+            "api_resend_verification",
             "admin_cleanup_tokens",
         }
 
@@ -1259,12 +1273,20 @@ def create_app():
             user = User(
                 email=email,
                 password_hash=generate_password_hash(uuid.uuid4().hex),
+                email_verified=True,  # Google OAuth users are pre-verified
             )
             from auth.models import db
 
             db.session.add(user)
             db.session.commit()
             app.logger.info("google oauth user created", extra={"user_id": user.id, "email": email})
+        else:
+            # If user exists but email not verified, verify it (they used Google)
+            if not user.email_verified:
+                user.email_verified = True
+                from auth.models import db
+                db.session.commit()
+                app.logger.info("google oauth user email verified", extra={"user_id": user.id})
 
         if not user.active:
             app.logger.warning("google oauth inactive user", extra={"user_id": user.id})
@@ -1322,6 +1344,18 @@ def create_app():
             AUTH_FAILURES_TOTAL.labels(failure_type="account_inactive").inc()
             return {"success": False, "error": "Your account is inactive."}, 403
 
+        # Check if email is verified
+        if not user.email_verified:
+            app.logger.warning("api login unverified email", extra={"user_id": user.id, "email": email})
+            AUTH_LOGIN_TOTAL.labels(status="failed_unverified").inc()
+            AUTH_FAILURES_TOTAL.labels(failure_type="email_unverified").inc()
+            return {
+                "success": False,
+                "error": "Please verify your email address before logging in.",
+                "email_verified": False,
+                "user_id": user.id
+            }, 403
+
         AUTH_LOGIN_TOTAL.labels(status="success").inc()
         return issue_auth_json_response(user)
 
@@ -1374,11 +1408,24 @@ def create_app():
         app.logger.info("api register success", extra={"user_id": user.id, "email": email})
         AUTH_REGISTER_TOTAL.labels(status="success").inc()
 
+        # Send verification email
+        app_url = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
+        email_sent = email_service.send_email_verification_email(
+            to=email,
+            verify_token=verification_token.token,
+            app_url=app_url
+        )
+
+        if email_sent:
+            app.logger.info("verification email sent", extra={"user_id": user.id})
+        else:
+            app.logger.warning("verification email failed to send", extra={"user_id": user.id})
+
         # Return auth response along with verification token
         response = issue_auth_json_response(user)
         response["verification_token"] = verification_token.token
         response["email_verified"] = user.email_verified
-        response["message"] = "Registration successful. Please verify your email address."
+        response["message"] = "Registration successful. Please check your email to verify your account."
         return response
 
     @app.route("/api/forgot", methods=["POST"])
@@ -1807,6 +1854,7 @@ def create_app():
 
         if not token:
             app.logger.warning("api verify email missing token")
+            EMAIL_VERIFICATION_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "Token is required."}, 400
 
         # Verify token against database
@@ -1814,6 +1862,7 @@ def create_app():
 
         if not verification_token:
             app.logger.warning("api verify email invalid token", extra={"token": token[:8] + "..."})
+            EMAIL_VERIFICATION_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "Invalid or expired token."}, 400
 
         if not verification_token.is_valid():
@@ -1821,6 +1870,7 @@ def create_app():
                 "token_id": verification_token.id,
                 "user_id": verification_token.user_id
             })
+            EMAIL_VERIFICATION_TOTAL.labels(status="failed_expired").inc()
             return {"success": False, "error": "Token has expired or already used."}, 400
 
         # Mark token as used
@@ -1833,10 +1883,94 @@ def create_app():
             from auth.models import db
             db.session.commit()
             app.logger.info("api verify email success", extra={"user_id": user.id})
-            return {"success": True, "message": "Email verified successfully."}
+            EMAIL_VERIFICATION_TOTAL.labels(status="success").inc()
+
+            # Send welcome email
+            try:
+                app_url = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
+                email_service.send_welcome_email(to=user.email, app_url=app_url)
+                app.logger.info("welcome email sent", extra={"user_id": user.id})
+            except Exception as e:
+                app.logger.warning(
+                    "welcome email failed to send",
+                    extra={"user_id": user.id, "error": str(e)}
+                )
+
+            return {"success": True, "message": "Email verified successfully. Welcome to Goalixa!"}
         else:
             app.logger.error("api verify email user not found", extra={"user_id": verification_token.user_id})
+            EMAIL_VERIFICATION_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "User not found."}, 404
+
+    @app.route("/api/resend-verification", methods=["POST"])
+    @rate_limit(action="resend_verification", limit=3, window_seconds=3600, block_duration_seconds=1800)
+    def api_resend_verification():
+        """Resend email verification link."""
+        data = request.get_json(silent=True) or {}
+
+        # Sanitize email input
+        email = sanitize_email(data.get("email", ""))
+        if not email:
+            app.logger.warning("api resend verification missing email")
+            return {"success": False, "error": "Email is required."}, 400
+
+        # Find user by email
+        user = User.query.filter_by(email=email).first()
+
+        # Don't reveal if user exists or not (security measure)
+        if not user:
+            app.logger.info("api resend verification unknown email", extra={"email": email})
+            EMAIL_VERIFICATION_RESEND_TOTAL.labels(status="success").inc()
+            return {
+                "success": True,
+                "message": "If an account exists with this email, a verification link has been sent."
+            }
+
+        # Check if already verified
+        if user.email_verified:
+            app.logger.info("api resend verification already verified", extra={"user_id": user.id})
+            EMAIL_VERIFICATION_RESEND_TOTAL.labels(status="failed_already_verified").inc()
+            return {
+                "success": False,
+                "error": "This email address is already verified."
+            }, 400
+
+        # Invalidate old tokens (optional - creates a new token each time)
+        # Or reuse existing valid token
+        existing_token = EmailVerificationToken.query.filter_by(
+            user_id=user.id,
+            used_at=None
+        ).filter(
+            EmailVerificationToken.expires_at >= datetime.utcnow()
+        ).order_by(EmailVerificationToken.created_at.desc()).first()
+
+        if existing_token:
+            # Reuse existing valid token
+            verification_token = existing_token
+            app.logger.info("api resend verification reusing token", extra={"user_id": user.id})
+        else:
+            # Create new verification token
+            verification_token = create_email_verification_token(user)
+            app.logger.info("api resend verification new token created", extra={"user_id": user.id})
+
+        # Send verification email
+        app_url = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
+        email_sent = email_service.send_email_verification_email(
+            to=email,
+            verify_token=verification_token.token,
+            app_url=app_url
+        )
+
+        if email_sent:
+            app.logger.info("verification email resent", extra={"user_id": user.id})
+        else:
+            app.logger.warning("verification email resend failed", extra={"user_id": user.id})
+
+        EMAIL_VERIFICATION_RESEND_TOTAL.labels(status="success").inc()
+        return {
+            "success": True,
+            "message": "If an account exists with this email, a verification link has been sent."
+        }
 
     return app
 
