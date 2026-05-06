@@ -22,7 +22,7 @@ class User(db.Model):
     refresh_tokens = db.relationship("RefreshToken", back_populates="user", lazy="dynamic")
     email_verification_tokens = db.relationship("EmailVerificationToken", back_populates="user", lazy="dynamic")
     reset_tokens = db.relationship("PasswordResetToken", back_populates="user", lazy="dynamic")
-    syntra_profile = db.relationship("SyntraUser", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    syntra_profile = db.relationship("SyntraUser", foreign_keys="SyntraUser.user_id", back_populates="user", uselist=False, cascade="all, delete-orphan")
     created_syntra_users = db.relationship("SyntraUser", foreign_keys="SyntraUser.created_by", backref="creator")
 
 
@@ -188,18 +188,45 @@ def cleanup_expired_tokens(days_to_keep=7):
         Number of tokens cleaned up
     """
     cutoff = datetime.utcnow() - timedelta(days=days_to_keep)
-    deleted = RefreshToken.query.filter(
+
+    # Clean up refresh tokens
+    deleted_refresh = RefreshToken.query.filter(
         db.or_(
             RefreshToken.revoked_at < cutoff,
             RefreshToken.expires_at < cutoff
         )
     ).delete()
+
+    # Clean up expired/used email verification tokens
+    deleted_verification = EmailVerificationToken.query.filter(
+        db.or_(
+            EmailVerificationToken.used_at < cutoff,
+            EmailVerificationToken.expires_at < cutoff
+        )
+    ).delete()
+
+    # Clean up expired/used password reset tokens
+    deleted_reset = PasswordResetToken.query.filter(
+        db.or_(
+            PasswordResetToken.used_at < cutoff,
+            PasswordResetToken.expires_at < cutoff
+        )
+    ).delete()
+
     db.session.commit()
+
+    total_deleted = deleted_refresh + deleted_verification + deleted_reset
     logger.info(
         "cleaned up expired tokens",
-        extra={"deleted_count": deleted, "cutoff_days": days_to_keep}
+        extra={
+            "deleted_count": total_deleted,
+            "refresh_tokens": deleted_refresh,
+            "verification_tokens": deleted_verification,
+            "reset_tokens": deleted_reset,
+            "cutoff_days": days_to_keep
+        }
     )
-    return deleted
+    return total_deleted
 
 
 def get_user_active_tokens(user_id):
