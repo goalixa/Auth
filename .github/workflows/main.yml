@@ -9,7 +9,7 @@ on:
       - '.github/**'
       - '**.md'
       - '.argo/**'
-      - 'helm/**'
+      # Note: helm/ changes ARE important for environment variables, so don't ignore them
   pull_request:
     branches:
       - main
@@ -18,7 +18,6 @@ on:
       - '.github/**'
       - '**.md'
       - '.argo/**'
-      - 'helm/**'
 
 permissions:
   contents: read
