@@ -1347,8 +1347,9 @@ def create_app():
             AUTH_FAILURES_TOTAL.labels(failure_type="account_inactive").inc()
             return {"success": False, "error": "Your account is inactive."}, 403
 
-        # Check if email is verified
-        if not user.email_verified:
+        # Check if email is verified (disabled on staging for testing)
+        ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+        if not user.email_verified and ENVIRONMENT == "production":
             app.logger.warning("api login unverified email", extra={"user_id": user.id, "email": email})
             AUTH_LOGIN_TOTAL.labels(status="failed_unverified").inc()
             AUTH_FAILURES_TOTAL.labels(failure_type="email_unverified").inc()
