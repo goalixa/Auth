@@ -30,6 +30,7 @@ env:
   AUTH_COOKIE_DOMAIN: ".staging.goalixa.com"
   GOALIXA_APP_URL: "https://staging.goalixa.com"
   REGISTERABLE: "1"
+  ENVIRONMENT: "staging"  # Disables email verification requirement on staging
 
 ingress:
   enabled: true

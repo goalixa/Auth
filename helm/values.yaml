@@ -51,6 +51,7 @@ env:
   PORT: "5001"
   FORCE_SSL: "true"
   PREFERRED_URL_SCHEME: "https"
+  ENVIRONMENT: "production"  # Enforces email verification requirement in production
 
   # Email configuration (Postmark SMTP)
   EMAIL_ENABLED: "1"
