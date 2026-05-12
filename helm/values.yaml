@@ -141,3 +141,60 @@ cronJob:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   cleanupDaysToKeep: 7
+
+# PostgreSQL Database Configuration
+postgres:
+  # Enable/disable PostgreSQL StatefulSet deployment
+  enabled: true
+
+  # StatefulSet replicas
+  replicas: 1
+
+  # Docker image configuration
+  image:
+    repository: postgres
+    tag: "15-alpine"
+    pullPolicy: IfNotPresent
+
+  # Database authentication
+  auth:
+    username: goalixa
+    password: ""  # Auto-generated if empty (32-char random)
+    database: goalixa_auth
+
+  # Persistent storage configuration
+  storage:
+    storageClass: longhorn-v2
+    size: 10Gi
+    # Backup configuration
+    backup:
+      enabled: true
+      schedule: "0 3 * * *"  # Daily at 3 AM UTC
+      retention: 7  # Days to keep backups
+      destination: "/backups/goalixa-auth"
+
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+    # Example anti-affinity (prefer different nodes):
+    # podAntiAffinity:
+    #   preferredDuringSchedulingIgnoredDuringExecution:
+    #     - weight: 100
+    #       podAffinityTerm:
+    #         labelSelector:
+    #           matchExpressions:
+    #             - key: app
+    #               operator: In
+    #               values:
+    #                 - postgres
+    #         topologyKey: kubernetes.io/hostname
