@@ -1,6 +1,6 @@
 """
 Email Templates for Goalixa
-Compatible with Postmark template system.
+Compatible with Postmark template system..
 """
 
 from datetime import datetime
