@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: goalixa-auth-db
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/name: auth-db
+    app.kubernetes.io/part-of: goalixa
+    component: database
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/goalixa/Auth.git
+    targetRevision: main
+    path: helm
+    helm:
+      releaseName: goalixa-auth-db
+      parameters:
+        - name: postgres.enabled
+          value: "true"
+        - name: postgres.replicas
+          value: "1"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: goalixa-auth
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: postgres-secret
+      jsonPointers:
+        - /data  # Allow manual secret management

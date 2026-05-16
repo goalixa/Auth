@@ -1,0 +1,24 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "goalixa-auth.labels" . | nindent 4 }}
+    app: postgres
+data:
+  # PostgreSQL initialization scripts
+  init-db.sql: |
+    -- Enable required extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
+    -- Create schema for auth service
+    CREATE SCHEMA IF NOT EXISTS auth;
+
+    -- Grant privileges to goalixa user
+    GRANT ALL PRIVILEGES ON SCHEMA auth TO {{ .Values.postgres.auth.username }};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON TABLES TO {{ .Values.postgres.auth.username }};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON SEQUENCES TO {{ .Values.postgres.auth.username }};
+{{- end }}

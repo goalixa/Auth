@@ -307,7 +307,8 @@ def init_db(app):
         if admin_email and admin_password:
             from werkzeug.security import generate_password_hash
 
-            if not User.query.filter_by(email=admin_email).first():
+            user = User.query.filter_by(email=admin_email).first()
+            if not user:
                 user = User(
                     email=admin_email,
                     password_hash=generate_password_hash(admin_password),
@@ -315,3 +316,15 @@ def init_db(app):
                 db.session.add(user)
                 db.session.commit()
                 logger.info("admin user created", extra={"email": admin_email})
+
+            # Create SyntraUser with admin role
+            syntra_user = SyntraUser.query.filter_by(user_id=user.id).first()
+            if not syntra_user:
+                syntra_user = SyntraUser(
+                    user_id=user.id,
+                    role='admin',
+                    active=True,
+                )
+                db.session.add(syntra_user)
+                db.session.commit()
+                logger.info("admin syntra user created", extra={"email": admin_email, "role": "admin"})

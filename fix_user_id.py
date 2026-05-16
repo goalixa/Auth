@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+.
 Fix SQLite auto-increment sequence issue for User table
 Run this script to reset the user ID sequence to max(id) + 1
 """
