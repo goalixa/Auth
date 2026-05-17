@@ -1889,7 +1889,7 @@ def create_app():
         verification_token.used_at = datetime.utcnow()
 
         # Mark user email as verified
-        user = User.query.get(verification_token.user_id)
+        user = User.query.filter_by(id=verification_token.user_id).first()
         if user:
             user.email_verified = True
             from auth.models import db
