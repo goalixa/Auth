@@ -32,6 +32,10 @@ env:
   REGISTERABLE: "1"
   ENVIRONMENT: "staging"  # Disables email verification requirement on staging
 
+# Disable postgres for staging (auth uses SQLite, Longhorn has multipathd issues)
+postgres:
+  enabled: false
+
 ingress:
   enabled: true
   className: "nginx"
