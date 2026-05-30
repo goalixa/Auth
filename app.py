@@ -878,6 +878,10 @@ def create_app():
                             refresh_token_record.last_seen_at = datetime.now(timezone.utc)
 
                             # Auto-issue new access token
+                            from auth.models import SyntraUser
+                            syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
+                            role = syntra_profile.role if syntra_profile else "user"
+
                             new_access_token = create_access_token(
                                 user_id=user.id,
                                 email=user.email,
@@ -885,6 +889,7 @@ def create_app():
                                 ttl_minutes=app.config[
                                     "AUTH_ACCESS_TOKEN_TTL_MINUTES"
                                 ],
+                                role=role,
                             )
 
                             g.current_user = user
@@ -1048,11 +1053,16 @@ def create_app():
     def create_auth_tokens(user, request=None):
         """Create access and refresh tokens with device tracking."""
         # Create access token
+        from auth.models import SyntraUser
+        syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
+        role = syntra_profile.role if syntra_profile else "user"
+
         access_token = create_access_token(
             user_id=user.id,
             email=user.email,
             secret=app.config["AUTH_JWT_SECRET"],
             ttl_minutes=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"],
+            role=role,
         )
         AUTH_TOKEN_ISSUED_TOTAL.labels(token_type="access").inc()
 
@@ -1758,11 +1768,16 @@ def create_app():
             return {"success": False, "error": "User not found or inactive."}, 401
 
         # Create new access token
+        from auth.models import SyntraUser
+        syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
+        role = syntra_profile.role if syntra_profile else "user"
+
         access_token = create_access_token(
             user_id=user.id,
             email=user.email,
             secret=app.config["AUTH_JWT_SECRET"],
             ttl_minutes=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"],
+            role=role,
         )
 
         # Rotate refresh token (issue new one, revoke old)
@@ -1849,11 +1864,17 @@ def create_app():
     @app.route("/api/me", methods=["GET"])
     def api_me():
         if g.current_user:
+            # Check for Syntra profile to get role
+            from auth.models import SyntraUser
+            syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
+            role = syntra_profile.role if syntra_profile else "user"
+            
             return {
                 "authenticated": True,
                 "user": {
                     "id": g.current_user.id,
                     "email": g.current_user.email,
+                    "role": role,
                 },
             }
         return {"authenticated": False, "user": None}

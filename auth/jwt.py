@@ -51,12 +51,13 @@ def decode_token(token, secret):
         return None, str(exc)
 
 
-def create_access_token(user_id, email, secret, ttl_minutes=15):
+def create_access_token(user_id, email, secret, ttl_minutes=15, role="user"):
     """Create a short-lived access token for dual-token authentication."""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "email": email,
+        "role": role,
         "type": "access",
         "iat": now,
         "exp": now + timedelta(minutes=ttl_minutes),
