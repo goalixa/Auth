@@ -17,7 +17,7 @@ def create_token(user_id, email, secret, ttl_minutes):
     warnings.warn(
         "create_token() is deprecated. Use create_access_token() for dual-token auth.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     now = datetime.now(timezone.utc)
     payload = {
@@ -37,7 +37,7 @@ def decode_token(token, secret):
     warnings.warn(
         "decode_token() is deprecated. Use decode_access_token() for dual-token auth.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     try:
         payload = jwt.decode(
@@ -94,7 +94,10 @@ def decode_access_token(token, secret):
         )
         # Check if token has type field and is an access token
         if "type" in payload and payload.get("type") != "access":
-            return None, f"Invalid token type: expected access, got {payload.get('type')}"
+            return (
+                None,
+                f"Invalid token type: expected access, got {payload.get('type')}",
+            )
         return payload, None
     except jwt.PyJWTError as exc:
         return None, str(exc)

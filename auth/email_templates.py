@@ -25,7 +25,7 @@ class EmailTemplates:
         button_text: str = None,
         button_link: str = None,
         show_link: bool = False,
-        footer_text: str = None
+        footer_text: str = None,
     ) -> str:
         """Base email template structure."""
         year = datetime.now().year
@@ -134,8 +134,12 @@ class EmailTemplates:
             verify_link: Verification URL with token
             recipient_email: Optional email address for personalization
         """
-        greeting = f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
-        recipient_info = f" at <strong>{recipient_email}</strong>" if recipient_email else ""
+        greeting = (
+            f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
+        )
+        recipient_info = (
+            f" at <strong>{recipient_email}</strong>" if recipient_email else ""
+        )
 
         content = f"""{greeting}
 
@@ -152,7 +156,7 @@ To complete your registration and secure your account, please verify your email 
             button_text="Verify Email Address",
             button_link=verify_link,
             show_link=True,
-            footer_text=footer_text
+            footer_text=footer_text,
         )
 
     @staticmethod
@@ -164,7 +168,9 @@ To complete your registration and secure your account, please verify your email 
             reset_link: Password reset URL with token
             recipient_email: Optional email address for personalization
         """
-        greeting = f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
+        greeting = (
+            f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
+        )
 
         content = f"""{greeting}
 
@@ -181,7 +187,7 @@ Click the button below to create a new password. This link will expire in <stron
             button_text="Reset Password",
             button_link=reset_link,
             show_link=True,
-            footer_text=footer_text
+            footer_text=footer_text,
         )
 
     @staticmethod
@@ -192,7 +198,9 @@ Click the button below to create a new password. This link will expire in <stron
         Args:
             recipient_email: Optional email address for personalization
         """
-        greeting = f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
+        greeting = (
+            f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
+        )
 
         content = f"""{greeting}
 
@@ -204,7 +212,7 @@ If you did not make this change, please contact our support team immediately."""
             subject="Password Successfully Reset",
             title="Password Has Been Reset",
             content=content,
-            footer_text="For your security, please never share your password with anyone."
+            footer_text="For your security, please never share your password with anyone.",
         )
 
     @staticmethod
@@ -216,7 +224,9 @@ If you did not make this change, please contact our support team immediately."""
             recipient_email: User's email address
             login_link: Optional link to login page
         """
-        greeting = f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
+        greeting = (
+            f"Hi {recipient_email.split('@')[0]}," if recipient_email else "Hello,"
+        )
 
         content = f"""{greeting}
 
@@ -242,7 +252,7 @@ You can now:
             content=content,
             button_text="Go to Dashboard",
             button_link=login_link,
-            show_link=True
+            show_link=True,
         )
 
 
@@ -264,32 +274,32 @@ def get_postmark_template_data(template_type: str, variables: Dict) -> Dict:
             "subject": "Verify Your Email Address",
             "html": EmailTemplates.verify_email(
                 verify_link=variables.get("verify_link", ""),
-                recipient_email=variables.get("email", "")
-            )
+                recipient_email=variables.get("email", ""),
+            ),
         },
         "password_reset": {
             "templateId": None,
             "subject": "Reset Your Password",
             "html": EmailTemplates.password_reset_request(
                 reset_link=variables.get("reset_link", ""),
-                recipient_email=variables.get("email", "")
-            )
+                recipient_email=variables.get("email", ""),
+            ),
         },
         "password_reset_confirmation": {
             "templateId": None,
             "subject": "Password Successfully Reset",
             "html": EmailTemplates.password_reset_confirmation(
                 recipient_email=variables.get("email", "")
-            )
+            ),
         },
         "welcome": {
             "templateId": None,
             "subject": "Welcome to Goalixa!",
             "html": EmailTemplates.welcome_user(
                 recipient_email=variables.get("email", ""),
-                login_link=variables.get("login_link", "")
-            )
-        }
+                login_link=variables.get("login_link", ""),
+            ),
+        },
     }
 
     return templates.get(template_type, {})

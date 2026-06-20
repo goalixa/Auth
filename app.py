@@ -23,7 +23,15 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, Summary, Info, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    Summary,
+    Info,
+    generate_latest,
+)
 
 from auth.jwt import (
     create_access_token,
@@ -74,19 +82,19 @@ def sanitize_email(email: str) -> str:
         return ""
 
     # Remove control characters and null bytes
-    email = re.sub(r'[\x00-\x1f\x7f]', '', email)
+    email = re.sub(r"[\x00-\x1f\x7f]", "", email)
 
     # Strip whitespace and convert to lowercase
     email = email.strip().lower()
 
     # Basic email format validation
     # RFC 5322 compliant (simplified)
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     if not re.match(email_pattern, email):
         return ""
 
     # Additional check for consecutive dots which can be problematic
-    if '..' in email:
+    if ".." in email:
         return ""
 
     return email
@@ -112,7 +120,7 @@ def sanitize_password(password: str) -> str:
 
     # Remove null bytes but keep other characters
     # (passwords can contain special characters)
-    password = password.replace('\x00', '')
+    password = password.replace("\x00", "")
 
     # Limit password length to prevent DoS
     # Max 128 characters is reasonable for passwords
@@ -157,13 +165,12 @@ def sanitize_string_input(input_str: str, max_length: int = 255) -> str:
         return ""
 
     # Remove control characters and null bytes
-    sanitized = re.sub(r'[\x00-\x1f\x7f]', '', str(input_str))
+    sanitized = re.sub(r"[\x00-\x1f\x7f]", "", str(input_str))
 
     # Trim to max length
     sanitized = sanitized[:max_length].strip()
 
     return sanitized
-
 
 
 def read_docker_secret(name):
@@ -242,11 +249,7 @@ def encode_oauth_state(payload):
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     # Create signature
-    signature = hmac.new(
-        secret.encode("utf-8"),
-        raw,
-        hashlib.sha256
-    ).digest()
+    signature = hmac.new(secret.encode("utf-8"), raw, hashlib.sha256).digest()
 
     # Encode both payload and signature
     encoded_payload = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
@@ -278,15 +281,15 @@ def decode_oauth_state(state):
 
         # Decode payload
         padding = "=" * (-len(encoded_payload) % 4)
-        decoded = base64.urlsafe_b64decode(f"{encoded_payload}{padding}".encode("utf-8"))
+        decoded = base64.urlsafe_b64decode(
+            f"{encoded_payload}{padding}".encode("utf-8")
+        )
         payload_bytes = decoded
 
         # Verify signature
         secret = get_jwt_secret()
         expected_signature = hmac.new(
-            secret.encode("utf-8"),
-            payload_bytes,
-            hashlib.sha256
+            secret.encode("utf-8"), payload_bytes, hashlib.sha256
         ).digest()
 
         # Decode provided signature
@@ -324,6 +327,7 @@ def append_query_params(url, extra_params):
             query[key] = str(value)
     return urlunparse(parsed._replace(query=urlencode(query)))
 
+
 # ============= HTTP Request Metrics =============
 REQUEST_COUNT = Counter(
     "goalixa_auth_http_requests_total",
@@ -339,12 +343,12 @@ REQUEST_LATENCY = Histogram(
 REQUEST_SIZE_BYTES = Summary(
     "goalixa_auth_http_request_size_bytes",
     "HTTP request size in bytes",
-    ["method", "endpoint"]
+    ["method", "endpoint"],
 )
 RESPONSE_SIZE_BYTES = Summary(
     "goalixa_auth_http_response_size_bytes",
     "HTTP response size in bytes",
-    ["method", "endpoint", "http_status"]
+    ["method", "endpoint", "http_status"],
 )
 INPROGRESS_REQUESTS = Gauge(
     "goalixa_auth_http_requests_inprogress",
@@ -370,7 +374,9 @@ AUTH_LOGOUT_TOTAL = Counter(
 AUTH_REFRESH_TOTAL = Counter(
     "goalixa_auth_token_refresh_total",
     "Total token refresh attempts",
-    ["status"],  # status: success, failed_missing, failed_invalid, failed_expired, failed_user_inactive
+    [
+        "status"
+    ],  # status: success, failed_missing, failed_invalid, failed_expired, failed_user_inactive
 )
 AUTH_TOKEN_ISSUED_TOTAL = Counter(
     "goalixa_auth_token_issued_total",
@@ -380,7 +386,10 @@ AUTH_TOKEN_ISSUED_TOTAL = Counter(
 AUTH_VALIDATION_TOTAL = Counter(
     "goalixa_auth_validation_total",
     "Total token validations",
-    ["token_type", "status"],  # token_type: access, refresh; status: success, failed, expired
+    [
+        "token_type",
+        "status",
+    ],  # token_type: access, refresh; status: success, failed, expired
 )
 
 # ============= OAuth Metrics =============
@@ -452,7 +461,9 @@ SESSION_DURATION_SECONDS = Histogram(
 AUTH_FAILURES_TOTAL = Counter(
     "goalixa_auth_failures_total",
     "Total authentication failures",
-    ["failure_type"],  # failure_type: invalid_credentials, invalid_token, expired_token, account_inactive
+    [
+        "failure_type"
+    ],  # failure_type: invalid_credentials, invalid_token, expired_token, account_inactive
 )
 SUSPICIOUS_ACTIVITY_TOTAL = Counter(
     "goalixa_auth_suspicious_activity_total",
@@ -461,10 +472,7 @@ SUSPICIOUS_ACTIVITY_TOTAL = Counter(
 )
 
 # ============= Application Info =============
-APP_INFO = Info(
-    "goalixa_auth_app_info",
-    "Goalixa Auth service information"
-)
+APP_INFO = Info("goalixa_auth_app_info", "Goalixa Auth service information")
 
 
 # ============= Rate Limiting =============
@@ -491,8 +499,7 @@ class RateLimiter:
         if key in self._requests:
             cutoff = time() - window_seconds
             self._requests[key] = [
-                (ts, count) for ts, count in self._requests[key]
-                if ts > cutoff
+                (ts, count) for ts, count in self._requests[key] if ts > cutoff
             ]
             # Remove empty lists
             if not self._requests[key]:
@@ -509,12 +516,7 @@ class RateLimiter:
         return False, 0
 
     def is_rate_limited(
-        self,
-        identifier,
-        action,
-        limit,
-        window_seconds=60,
-        block_duration_seconds=300
+        self, identifier, action, limit, window_seconds=60, block_duration_seconds=300
     ):
         """
         Check if action should be rate limited.
@@ -549,7 +551,7 @@ class RateLimiter:
             self._blocked[identifier] = time() + block_duration_seconds
             app.logger.warning(
                 f"Rate limit exceeded for {action}",
-                extra={"identifier": identifier, "count": current_count}
+                extra={"identifier": identifier, "count": current_count},
             )
             return True, block_duration_seconds
 
@@ -599,6 +601,7 @@ def rate_limit(action, limit, window_seconds=60, block_duration_seconds=300):
         window_seconds: Time window (default 60s)
         block_duration_seconds: Block duration after limit exceeded (default 300s)
     """
+
     def decorator(f):
         def wrapped(*args, **kwargs):
             ip = get_client_ip()
@@ -609,20 +612,20 @@ def rate_limit(action, limit, window_seconds=60, block_duration_seconds=300):
                 action=action,
                 limit=limit,
                 window_seconds=window_seconds,
-                block_duration_seconds=block_duration_seconds
+                block_duration_seconds=block_duration_seconds,
             )
 
             if is_limited:
                 app.logger.warning(
                     f"Rate limit applied for {action}",
-                    extra={"ip": ip, "retry_after": retry_after}
+                    extra={"ip": ip, "retry_after": retry_after},
                 )
                 response = {
                     "success": False,
-                    "error": f"Too many attempts. Please try again in {retry_after} seconds."
+                    "error": f"Too many attempts. Please try again in {retry_after} seconds.",
                 }, 429
                 # Add Retry-After header
-                if hasattr(response, 'headers'):
+                if hasattr(response, "headers"):
                     response.headers["Retry-After"] = str(retry_after)
                 return response
 
@@ -643,9 +646,10 @@ def auth_required():
     Checks if g.current_user is set (by load_user before_request handler).
     Returns 401 Unauthorized if not authenticated.
     """
+
     def decorator(f):
         def wrapped(*args, **kwargs):
-            if not getattr(g, 'current_user', None):
+            if not getattr(g, "current_user", None):
                 return {"success": False, "error": "Authentication required."}, 401
             return f(*args, **kwargs)
 
@@ -675,20 +679,19 @@ def validate_password_complexity(password: str) -> tuple[bool, str]:
     if len(password) < 8:
         return False, "Password must be at least 8 characters long."
 
-    if not re.search(r'[a-z]', password):
+    if not re.search(r"[a-z]", password):
         return False, "Password must contain at least one lowercase letter."
 
-    if not re.search(r'[A-Z]', password):
+    if not re.search(r"[A-Z]", password):
         return False, "Password must contain at least one uppercase letter."
 
-    if not re.search(r'\d', password):
+    if not re.search(r"\d", password):
         return False, "Password must contain at least one digit."
 
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         return False, "Password must contain at least one special character."
 
     return True, ""
-
 
 
 def create_app():
@@ -699,11 +702,13 @@ def create_app():
     app.logger.setLevel(log_level)
 
     # Initialize application info
-    APP_INFO.info({
-        'version': os.getenv('APP_VERSION', '1.0.0'),
-        'environment': os.getenv('ENVIRONMENT', 'development'),
-        'service': 'goalixa-auth'
-    })
+    APP_INFO.info(
+        {
+            "version": os.getenv("APP_VERSION", "1.0.0"),
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "service": "goalixa-auth",
+        }
+    )
 
     app.config["SECRET_KEY"] = get_config_value("AUTH_SECRET_KEY", "dev-auth-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = get_config_value(
@@ -729,7 +734,9 @@ def create_app():
     samesite_config = get_config_value("AUTH_COOKIE_SAMESITE", "Lax")
     # Convert string "None" to Python None for Flask's set_cookie()
     # Flask needs None (not "None") to set SameSite=None correctly
-    app.config["AUTH_COOKIE_SAMESITE"] = None if samesite_config == "None" else samesite_config
+    app.config["AUTH_COOKIE_SAMESITE"] = (
+        None if samesite_config == "None" else samesite_config
+    )
     app.config["AUTH_COOKIE_DOMAIN"] = get_config_value("AUTH_COOKIE_DOMAIN")
     # Default to True for secure cookies in production
     secure = get_config_value("AUTH_COOKIE_SECURE", "1") == "1"
@@ -741,10 +748,9 @@ def create_app():
     app.config["GOOGLE_CLIENT_ID"] = get_config_value("GOOGLE_CLIENT_ID")
     app.config["GOOGLE_CLIENT_SECRET"] = get_config_value("GOOGLE_CLIENT_SECRET")
     app.config["GOOGLE_REDIRECT_URI"] = get_config_value("GOOGLE_REDIRECT_URI")
-    app.config["AUTH_OAUTH_RETURN_TO_DEFAULT"] = (
-        get_config_value("AUTH_OAUTH_RETURN_TO_DEFAULT")
-        or get_config_value("GOALIXA_APP_URL")
-    )
+    app.config["AUTH_OAUTH_RETURN_TO_DEFAULT"] = get_config_value(
+        "AUTH_OAUTH_RETURN_TO_DEFAULT"
+    ) or get_config_value("GOALIXA_APP_URL")
     app.config["AUTH_OAUTH_RETURN_TO_ALLOWED_ORIGINS"] = parse_allowed_origins(
         get_config_value("AUTH_OAUTH_RETURN_TO_ALLOWLIST", ""),
         app.config["AUTH_OAUTH_RETURN_TO_DEFAULT"],
@@ -875,20 +881,23 @@ def create_app():
                         user = User.query.get(user_id)
                         if user and user.active:
                             # Update last_seen_at timestamp
-                            refresh_token_record.last_seen_at = datetime.now(timezone.utc)
+                            refresh_token_record.last_seen_at = datetime.now(
+                                timezone.utc
+                            )
 
                             # Auto-issue new access token
                             from auth.models import SyntraUser
-                            syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
+
+                            syntra_profile = SyntraUser.query.filter_by(
+                                user_id=user.id
+                            ).first()
                             role = syntra_profile.role if syntra_profile else "user"
 
                             new_access_token = create_access_token(
                                 user_id=user.id,
                                 email=user.email,
                                 secret=app.config["AUTH_JWT_SECRET"],
-                                ttl_minutes=app.config[
-                                    "AUTH_ACCESS_TOKEN_TTL_MINUTES"
-                                ],
+                                ttl_minutes=app.config["AUTH_ACCESS_TOKEN_TTL_MINUTES"],
                                 role=role,
                             )
 
@@ -898,6 +907,7 @@ def create_app():
 
                             # Commit the timestamp update
                             from auth.models import db
+
                             db.session.commit()
 
                             app.logger.info(
@@ -996,7 +1006,9 @@ def create_app():
 
         # Detect device type from user agent
         device_type = "desktop"
-        if any(mobile in user_agent.lower() for mobile in ["mobile", "android", "iphone"]):
+        if any(
+            mobile in user_agent.lower() for mobile in ["mobile", "android", "iphone"]
+        ):
             device_type = "mobile"
         elif any(tablet in user_agent.lower() for tablet in ["ipad", "tablet"]):
             device_type = "tablet"
@@ -1054,6 +1066,7 @@ def create_app():
         """Create access and refresh tokens with device tracking."""
         # Create access token
         from auth.models import SyntraUser
+
         syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
         role = syntra_profile.role if syntra_profile else "user"
 
@@ -1253,9 +1266,13 @@ def create_app():
         try:
             token = oauth.google.authorize_access_token()
         except Exception as exc:  # pragma: no cover - runtime/provider dependent
-            app.logger.warning("google oauth token exchange failed", extra={"error": str(exc)})
+            app.logger.warning(
+                "google oauth token exchange failed", extra={"error": str(exc)}
+            )
             return redirect(
-                append_query_params(return_to, {"auth_error": "google_token_exchange_failed"})
+                append_query_params(
+                    return_to, {"auth_error": "google_token_exchange_failed"}
+                )
             )
 
         user_info = token.get("userinfo") if token else None
@@ -1265,9 +1282,13 @@ def create_app():
                     "https://www.googleapis.com/oauth2/v3/userinfo"
                 ).json()
             except Exception as exc:  # pragma: no cover - runtime/provider dependent
-                app.logger.warning("google oauth userinfo request failed", extra={"error": str(exc)})
+                app.logger.warning(
+                    "google oauth userinfo request failed", extra={"error": str(exc)}
+                )
                 return redirect(
-                    append_query_params(return_to, {"auth_error": "google_userinfo_failed"})
+                    append_query_params(
+                        return_to, {"auth_error": "google_userinfo_failed"}
+                    )
                 )
 
         email = str((user_info or {}).get("email", "")).strip().lower()
@@ -1278,7 +1299,9 @@ def create_app():
                 extra={"email": email, "email_verified": email_verified},
             )
             return redirect(
-                append_query_params(return_to, {"auth_error": "google_email_not_verified"})
+                append_query_params(
+                    return_to, {"auth_error": "google_email_not_verified"}
+                )
             )
 
         user = User.query.filter_by(email=email).first()
@@ -1292,14 +1315,19 @@ def create_app():
 
             db.session.add(user)
             db.session.commit()
-            app.logger.info("google oauth user created", extra={"user_id": user.id, "email": email})
+            app.logger.info(
+                "google oauth user created", extra={"user_id": user.id, "email": email}
+            )
         else:
             # If user exists but email not verified, verify it (they used Google)
             if not user.email_verified:
                 user.email_verified = True
                 from auth.models import db
+
                 db.session.commit()
-                app.logger.info("google oauth user email verified", extra={"user_id": user.id})
+                app.logger.info(
+                    "google oauth user email verified", extra={"user_id": user.id}
+                )
 
         if not user.active:
             app.logger.warning("google oauth inactive user", extra={"user_id": user.id})
@@ -1307,11 +1335,15 @@ def create_app():
                 append_query_params(return_to, {"auth_error": "account_inactive"})
             )
 
-        app.logger.info("google oauth success", extra={"user_id": user.id, "email": email})
+        app.logger.info(
+            "google oauth success", extra={"user_id": user.id, "email": email}
+        )
         return issue_auth_redirect_response(user, return_to)
 
     @app.route("/api/login", methods=["POST"])
-    @rate_limit(action="login_attempt", limit=5, window_seconds=300, block_duration_seconds=900)
+    @rate_limit(
+        action="login_attempt", limit=5, window_seconds=300, block_duration_seconds=900
+    )
     def api_login():
         data = request.get_json(silent=True) or {}
         raw_email = data.get("email", "")
@@ -1331,7 +1363,9 @@ def create_app():
 
         # Use a dummy password hash to prevent timing attacks
         # This ensures constant-time execution whether user exists or not
-        dummy_hash = generate_password_hash("dummy_password_for_timing_attack_prevention")
+        dummy_hash = generate_password_hash(
+            "dummy_password_for_timing_attack_prevention"
+        )
 
         # Check password with constant-time comparison
         # Always perform password verification to prevent timing attacks
@@ -1360,14 +1394,16 @@ def create_app():
         # Check if email is verified (disabled on staging for testing)
         ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
         if not user.email_verified and ENVIRONMENT == "production":
-            app.logger.warning("api login unverified email", extra={"user_id": user.id, "email": email})
+            app.logger.warning(
+                "api login unverified email", extra={"user_id": user.id, "email": email}
+            )
             AUTH_LOGIN_TOTAL.labels(status="failed_unverified").inc()
             AUTH_FAILURES_TOTAL.labels(failure_type="email_unverified").inc()
             return {
                 "success": False,
                 "error": "Please verify your email address before logging in.",
                 "email_verified": False,
-                "user_id": user.id
+                "user_id": user.id,
             }, 403
 
         AUTH_LOGIN_TOTAL.labels(status="success").inc()
@@ -1413,27 +1449,31 @@ def create_app():
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
-            app.logger.warning("api register email exists (integrity)", extra={"email": email})
+            app.logger.warning(
+                "api register email exists (integrity)", extra={"email": email}
+            )
             AUTH_REGISTER_TOTAL.labels(status="failed_exists").inc()
             return {"success": False, "error": "Email already registered."}, 409
 
         # Create email verification token
         verification_token = create_email_verification_token(user)
-        app.logger.info("api register success", extra={"user_id": user.id, "email": email})
+        app.logger.info(
+            "api register success", extra={"user_id": user.id, "email": email}
+        )
         AUTH_REGISTER_TOTAL.labels(status="success").inc()
 
         # Send verification email
         app_url = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
         email_sent = email_service.send_email_verification_email(
-            to=email,
-            verify_token=verification_token.token,
-            app_url=app_url
+            to=email, verify_token=verification_token.token, app_url=app_url
         )
 
         if email_sent:
             app.logger.info("verification email sent", extra={"user_id": user.id})
         else:
-            app.logger.warning("verification email failed to send", extra={"user_id": user.id})
+            app.logger.warning(
+                "verification email failed to send", extra={"user_id": user.id}
+            )
 
         # Return auth response along with verification token
         response = issue_auth_json_response(user)
@@ -1442,16 +1482,23 @@ def create_app():
         # Add verification fields
         response_data["verification_token"] = verification_token.token
         response_data["email_verified"] = user.email_verified
-        response_data["message"] = "Registration successful. Please check your email to verify your account."
+        response_data["message"] = (
+            "Registration successful. Please check your email to verify your account."
+        )
         # Create new response with the modified data
         new_response = make_response(json.dumps(response_data))
         # Copy cookies from original response
-        for cookie in response.headers.getlist('Set-Cookie'):
-            new_response.headers.add('Set-Cookie', cookie)
+        for cookie in response.headers.getlist("Set-Cookie"):
+            new_response.headers.add("Set-Cookie", cookie)
         return new_response
 
     @app.route("/api/forgot", methods=["POST"])
-    @rate_limit(action="password_reset_request", limit=3, window_seconds=300, block_duration_seconds=900)
+    @rate_limit(
+        action="password_reset_request",
+        limit=3,
+        window_seconds=300,
+        block_duration_seconds=900,
+    )
     def api_forgot_password():
         data = request.get_json(silent=True) or {}
 
@@ -1469,15 +1516,15 @@ def create_app():
             # Send password reset email
             app_url = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
             email_sent = email_service.send_password_reset_email(
-                to=email,
-                reset_token=reset_token.token,
-                app_url=app_url
+                to=email, reset_token=reset_token.token, app_url=app_url
             )
 
             if email_sent:
                 app.logger.info("password reset email sent", extra={"user_id": user.id})
             else:
-                app.logger.warning("password reset email failed", extra={"user_id": user.id})
+                app.logger.warning(
+                    "password reset email failed", extra={"user_id": user.id}
+                )
         else:
             app.logger.info("api forgot unknown email", extra={"email": email})
 
@@ -1488,14 +1535,24 @@ def create_app():
         }
 
     @app.route("/api/password-reset/request", methods=["POST"])
-    @rate_limit(action="password_reset_request", limit=3, window_seconds=300, block_duration_seconds=900)
+    @rate_limit(
+        action="password_reset_request",
+        limit=3,
+        window_seconds=300,
+        block_duration_seconds=900,
+    )
     def api_password_reset_request():
         """Alias endpoint used by PWA for password-reset request flow."""
         return api_forgot_password()
 
     @app.route("/api/password-reset/confirm", methods=["POST"])
     @app.route("/api/reset", methods=["POST"])
-    @rate_limit(action="password_reset_confirm", limit=5, window_seconds=300, block_duration_seconds=900)
+    @rate_limit(
+        action="password_reset_confirm",
+        limit=5,
+        window_seconds=300,
+        block_duration_seconds=900,
+    )
     def api_password_reset_confirm():
         """Confirm password reset with token + new password."""
         data = request.get_json(silent=True) or {}
@@ -1533,7 +1590,7 @@ def create_app():
         except Exception as e:
             app.logger.warning(
                 "password reset confirmation email failed",
-                extra={"user_id": reset_token.user_id, "error": str(e)}
+                extra={"user_id": reset_token.user_id, "error": str(e)},
             )
 
         app.logger.info(
@@ -1553,9 +1610,7 @@ def create_app():
                 refresh_token_jwt, app.config["AUTH_JWT_SECRET"]
             )
             if not err and payload and "jti" in payload:
-                token = RefreshToken.query.filter_by(
-                    token_id=payload["jti"]
-                ).first()
+                token = RefreshToken.query.filter_by(token_id=payload["jti"]).first()
                 if token and token.is_valid():
                     token.revoke()
                     from auth.models import db
@@ -1623,13 +1678,12 @@ def create_app():
                 if token_id == current_token_id:
                     return {
                         "success": False,
-                        "error": "Cannot revoke current session. Use /api/logout instead."
+                        "error": "Cannot revoke current session. Use /api/logout instead.",
                     }, 400
 
         # Find and revoke the token
         token = RefreshToken.query.filter_by(
-            id=token_id,
-            user_id=g.current_user.id
+            id=token_id, user_id=g.current_user.id
         ).first()
 
         if not token:
@@ -1667,8 +1721,7 @@ def create_app():
 
         # Revoke all tokens except current
         tokens = RefreshToken.query.filter_by(
-            user_id=g.current_user.id,
-            revoked_at=None
+            user_id=g.current_user.id, revoked_at=None
         ).all()
 
         revoked_count = 0
@@ -1689,7 +1742,7 @@ def create_app():
         return {
             "success": True,
             "message": f"Revoked {revoked_count} session(s).",
-            "revoked_count": revoked_count
+            "revoked_count": revoked_count,
         }
 
     @app.route("/admin/cleanup-tokens", methods=["POST"])
@@ -1708,7 +1761,7 @@ def create_app():
         return {
             "success": True,
             "message": f"Cleaned up {deleted} expired tokens.",
-            "deleted_count": deleted
+            "deleted_count": deleted,
         }
 
     @app.route("/api/refresh", methods=["POST"])
@@ -1742,7 +1795,9 @@ def create_app():
         try:
             user_id = int(payload.get("sub"))
         except (TypeError, ValueError):
-            app.logger.warning("api refresh invalid user_id", extra={"sub": payload.get("sub")})
+            app.logger.warning(
+                "api refresh invalid user_id", extra={"sub": payload.get("sub")}
+            )
             AUTH_REFRESH_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "Invalid refresh token."}, 401
 
@@ -1769,6 +1824,7 @@ def create_app():
 
         # Create new access token
         from auth.models import SyntraUser
+
         syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
         role = syntra_profile.role if syntra_profile else "user"
 
@@ -1866,9 +1922,12 @@ def create_app():
         if g.current_user:
             # Check for Syntra profile to get role
             from auth.models import SyntraUser
-            syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
+
+            syntra_profile = SyntraUser.query.filter_by(
+                user_id=g.current_user.id
+            ).first()
             role = syntra_profile.role if syntra_profile else "user"
-            
+
             return {
                 "authenticated": True,
                 "user": {
@@ -1894,17 +1953,25 @@ def create_app():
         verification_token = EmailVerificationToken.query.filter_by(token=token).first()
 
         if not verification_token:
-            app.logger.warning("api verify email invalid token", extra={"token": token[:8] + "..."})
+            app.logger.warning(
+                "api verify email invalid token", extra={"token": token[:8] + "..."}
+            )
             EMAIL_VERIFICATION_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "Invalid or expired token."}, 400
 
         if not verification_token.is_valid():
-            app.logger.warning("api verify email expired or used token", extra={
-                "token_id": verification_token.id,
-                "user_id": verification_token.user_id
-            })
+            app.logger.warning(
+                "api verify email expired or used token",
+                extra={
+                    "token_id": verification_token.id,
+                    "user_id": verification_token.user_id,
+                },
+            )
             EMAIL_VERIFICATION_TOTAL.labels(status="failed_expired").inc()
-            return {"success": False, "error": "Token has expired or already used."}, 400
+            return {
+                "success": False,
+                "error": "Token has expired or already used.",
+            }, 400
 
         # Mark token as used
         verification_token.used_at = datetime.utcnow()
@@ -1914,6 +1981,7 @@ def create_app():
         if user:
             user.email_verified = True
             from auth.models import db
+
             db.session.commit()
             app.logger.info("api verify email success", extra={"user_id": user.id})
             EMAIL_VERIFICATION_TOTAL.labels(status="success").inc()
@@ -1926,17 +1994,28 @@ def create_app():
             except Exception as e:
                 app.logger.warning(
                     "welcome email failed to send",
-                    extra={"user_id": user.id, "error": str(e)}
+                    extra={"user_id": user.id, "error": str(e)},
                 )
 
-            return {"success": True, "message": "Email verified successfully. Welcome to Goalixa!"}
+            return {
+                "success": True,
+                "message": "Email verified successfully. Welcome to Goalixa!",
+            }
         else:
-            app.logger.error("api verify email user not found", extra={"user_id": verification_token.user_id})
+            app.logger.error(
+                "api verify email user not found",
+                extra={"user_id": verification_token.user_id},
+            )
             EMAIL_VERIFICATION_TOTAL.labels(status="failed_invalid").inc()
             return {"success": False, "error": "User not found."}, 404
 
     @app.route("/api/resend-verification", methods=["POST"])
-    @rate_limit(action="resend_verification", limit=3, window_seconds=3600, block_duration_seconds=1800)
+    @rate_limit(
+        action="resend_verification",
+        limit=3,
+        window_seconds=3600,
+        block_duration_seconds=1800,
+    )
     def api_resend_verification():
         """Resend email verification link."""
         data = request.get_json(silent=True) or {}
@@ -1952,57 +2031,67 @@ def create_app():
 
         # Don't reveal if user exists or not (security measure)
         if not user:
-            app.logger.info("api resend verification unknown email", extra={"email": email})
+            app.logger.info(
+                "api resend verification unknown email", extra={"email": email}
+            )
             EMAIL_VERIFICATION_RESEND_TOTAL.labels(status="success").inc()
             return {
                 "success": True,
-                "message": "If an account exists with this email, a verification link has been sent."
+                "message": "If an account exists with this email, a verification link has been sent.",
             }
 
         # Check if already verified
         if user.email_verified:
-            app.logger.info("api resend verification already verified", extra={"user_id": user.id})
-            EMAIL_VERIFICATION_RESEND_TOTAL.labels(status="failed_already_verified").inc()
+            app.logger.info(
+                "api resend verification already verified", extra={"user_id": user.id}
+            )
+            EMAIL_VERIFICATION_RESEND_TOTAL.labels(
+                status="failed_already_verified"
+            ).inc()
             return {
                 "success": False,
-                "error": "This email address is already verified."
+                "error": "This email address is already verified.",
             }, 400
 
         # Invalidate old tokens (optional - creates a new token each time)
         # Or reuse existing valid token
-        existing_token = EmailVerificationToken.query.filter_by(
-            user_id=user.id,
-            used_at=None
-        ).filter(
-            EmailVerificationToken.expires_at >= datetime.utcnow()
-        ).order_by(EmailVerificationToken.created_at.desc()).first()
+        existing_token = (
+            EmailVerificationToken.query.filter_by(user_id=user.id, used_at=None)
+            .filter(EmailVerificationToken.expires_at >= datetime.utcnow())
+            .order_by(EmailVerificationToken.created_at.desc())
+            .first()
+        )
 
         if existing_token:
             # Reuse existing valid token
             verification_token = existing_token
-            app.logger.info("api resend verification reusing token", extra={"user_id": user.id})
+            app.logger.info(
+                "api resend verification reusing token", extra={"user_id": user.id}
+            )
         else:
             # Create new verification token
             verification_token = create_email_verification_token(user)
-            app.logger.info("api resend verification new token created", extra={"user_id": user.id})
+            app.logger.info(
+                "api resend verification new token created", extra={"user_id": user.id}
+            )
 
         # Send verification email
         app_url = os.getenv("GOALIXA_APP_URL", "http://localhost:5000")
         email_sent = email_service.send_email_verification_email(
-            to=email,
-            verify_token=verification_token.token,
-            app_url=app_url
+            to=email, verify_token=verification_token.token, app_url=app_url
         )
 
         if email_sent:
             app.logger.info("verification email resent", extra={"user_id": user.id})
         else:
-            app.logger.warning("verification email resend failed", extra={"user_id": user.id})
+            app.logger.warning(
+                "verification email resend failed", extra={"user_id": user.id}
+            )
 
         EMAIL_VERIFICATION_RESEND_TOTAL.labels(status="success").inc()
         return {
             "success": True,
-            "message": "If an account exists with this email, a verification link has been sent."
+            "message": "If an account exists with this email, a verification link has been sent.",
         }
 
     # ============= Syntra API Endpoints =============
@@ -2019,8 +2108,14 @@ def create_app():
         # Fall back to JWT token validation
         if g.current_user:
             # Check if user has Syntra admin role
-            syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
-            if syntra_profile and syntra_profile.role == "admin" and syntra_profile.active:
+            syntra_profile = SyntraUser.query.filter_by(
+                user_id=g.current_user.id
+            ).first()
+            if (
+                syntra_profile
+                and syntra_profile.role == "admin"
+                and syntra_profile.active
+            ):
                 return True, g.current_user
 
         return False, None
@@ -2043,7 +2138,10 @@ def create_app():
         is_admin, admin_user = _validate_syntra_admin_request()
         if not is_admin:
             app.logger.warning("syntra admin create user: unauthorized")
-            return {"success": False, "error": "Unauthorized. Admin access required."}, 401
+            return {
+                "success": False,
+                "error": "Unauthorized. Admin access required.",
+            }, 401
 
         data = request.get_json(silent=True) or {}
 
@@ -2060,8 +2158,13 @@ def create_app():
         # Validate role
         valid_roles = {"admin", "operator", "viewer"}
         if role not in valid_roles:
-            app.logger.warning("syntra admin create user: invalid role", extra={"role": role})
-            return {"success": False, "error": f"Invalid role. Must be one of: {', '.join(valid_roles)}"}, 400
+            app.logger.warning(
+                "syntra admin create user: invalid role", extra={"role": role}
+            )
+            return {
+                "success": False,
+                "error": f"Invalid role. Must be one of: {', '.join(valid_roles)}",
+            }, 400
 
         # Validate password complexity
         is_valid, error_msg = validate_password_complexity(password)
@@ -2075,8 +2178,13 @@ def create_app():
             # Check if user already has a Syntra profile
             existing_syntra = SyntraUser.query.filter_by(user_id=existing.id).first()
             if existing_syntra:
-                app.logger.warning("syntra admin create user: already exists", extra={"email": email})
-                return {"success": False, "error": "User already has a Syntra profile."}, 409
+                app.logger.warning(
+                    "syntra admin create user: already exists", extra={"email": email}
+                )
+                return {
+                    "success": False,
+                    "error": "User already has a Syntra profile.",
+                }, 409
             # Create Syntra profile for existing user
             user = existing
         else:
@@ -2088,12 +2196,15 @@ def create_app():
                 email_verified=True,  # Admin-created users are pre-verified
             )
             from auth.models import db
+
             db.session.add(user)
             try:
                 db.session.flush()  # Get the user ID without committing
             except IntegrityError:
                 db.session.rollback()
-                app.logger.warning("syntra admin create user: integrity error", extra={"email": email})
+                app.logger.warning(
+                    "syntra admin create user: integrity error", extra={"email": email}
+                )
                 return {"success": False, "error": "Email already registered."}, 409
 
         # Create or update Syntra profile
@@ -2105,7 +2216,10 @@ def create_app():
             syntra_profile.role = role
             syntra_profile.department = department
             syntra_profile.active = True
-            app.logger.info("syntra admin: updated existing user profile", extra={"user_id": user.id})
+            app.logger.info(
+                "syntra admin: updated existing user profile",
+                extra={"user_id": user.id},
+            )
         else:
             # Create new Syntra profile
             syntra_profile = SyntraUser(
@@ -2116,10 +2230,15 @@ def create_app():
                 active=True,
             )
             from auth.models import db
+
             db.session.add(syntra_profile)
-            app.logger.info("syntra admin: created new user", extra={"user_id": user.id, "role": role})
+            app.logger.info(
+                "syntra admin: created new user",
+                extra={"user_id": user.id, "role": role},
+            )
 
         from auth.models import db
+
         db.session.commit()
 
         return {
@@ -2130,11 +2249,13 @@ def create_app():
                 "syntra_role": syntra_profile.role,
                 "department": syntra_profile.department,
                 "active": syntra_profile.active,
-            }
+            },
         }, 201
 
     @app.route("/api/syntra/login", methods=["POST"])
-    @rate_limit(action="syntra_login", limit=5, window_seconds=300, block_duration_seconds=900)
+    @rate_limit(
+        action="syntra_login", limit=5, window_seconds=300, block_duration_seconds=900
+    )
     def api_syntra_login():
         """
         Syntra-specific login endpoint.
@@ -2162,7 +2283,9 @@ def create_app():
         user = User.query.filter_by(email=email).first()
 
         # Use constant-time password verification
-        dummy_hash = generate_password_hash("dummy_password_for_timing_attack_prevention")
+        dummy_hash = generate_password_hash(
+            "dummy_password_for_timing_attack_prevention"
+        )
         password_valid = False
         if user:
             password_valid = check_password_hash(user.password_hash, password)
@@ -2170,13 +2293,17 @@ def create_app():
             check_password_hash(dummy_hash, password)
 
         if not password_valid or not user:
-            app.logger.warning("syntra login: invalid credentials", extra={"email": email})
+            app.logger.warning(
+                "syntra login: invalid credentials", extra={"email": email}
+            )
             AUTH_LOGIN_TOTAL.labels(status="failed_credentials").inc()
             AUTH_FAILURES_TOTAL.labels(failure_type="syntra_invalid_credentials").inc()
             return {"success": False, "error": "Invalid email or password."}, 401
 
         if not user.active:
-            app.logger.warning("syntra login: inactive user", extra={"user_id": user.id})
+            app.logger.warning(
+                "syntra login: inactive user", extra={"user_id": user.id}
+            )
             AUTH_LOGIN_TOTAL.labels(status="failed_inactive").inc()
             AUTH_FAILURES_TOTAL.labels(failure_type="account_inactive").inc()
             return {"success": False, "error": "Your account is inactive."}, 403
@@ -2184,9 +2311,14 @@ def create_app():
         # Check if user has a Syntra profile
         syntra_profile = SyntraUser.query.filter_by(user_id=user.id).first()
         if not syntra_profile or not syntra_profile.active:
-            app.logger.warning("syntra login: no active syntra profile", extra={"user_id": user.id})
+            app.logger.warning(
+                "syntra login: no active syntra profile", extra={"user_id": user.id}
+            )
             AUTH_FAILURES_TOTAL.labels(failure_type="syntra_no_profile").inc()
-            return {"success": False, "error": "User does not have an active Syntra profile."}, 403
+            return {
+                "success": False,
+                "error": "User does not have an active Syntra profile.",
+            }, 403
 
         AUTH_LOGIN_TOTAL.labels(status="success").inc()
 
@@ -2203,7 +2335,7 @@ def create_app():
                 "role": syntra_profile.role,
                 "department": syntra_profile.department,
                 "active": syntra_profile.active,
-            }
+            },
         }
 
     @app.route("/api/syntra/validate", methods=["GET", "POST"])
@@ -2220,8 +2352,14 @@ def create_app():
         # Get Syntra profile
         syntra_profile = SyntraUser.query.filter_by(user_id=g.current_user.id).first()
         if not syntra_profile or not syntra_profile.active:
-            app.logger.warning("syntra validate: no active syntra profile", extra={"user_id": g.current_user.id})
-            return {"valid": False, "error": "User does not have an active Syntra profile"}, 403
+            app.logger.warning(
+                "syntra validate: no active syntra profile",
+                extra={"user_id": g.current_user.id},
+            )
+            return {
+                "valid": False,
+                "error": "User does not have an active Syntra profile",
+            }, 403
 
         return {
             "valid": True,
@@ -2231,7 +2369,7 @@ def create_app():
                 "role": syntra_profile.role,
                 "department": syntra_profile.department,
                 "active": syntra_profile.active,
-            }
+            },
         }
 
     @app.route("/api/syntra/users", methods=["GET"])
@@ -2304,17 +2442,20 @@ def create_app():
             target_profile.role = role
 
         if "department" in data:
-            target_profile.department = sanitize_string_input(data["department"], max_length=100)
+            target_profile.department = sanitize_string_input(
+                data["department"], max_length=100
+            )
 
         if "active" in data:
             target_profile.active = bool(data["active"])
 
         from auth.models import db
+
         db.session.commit()
 
         app.logger.info(
             "syntra admin: updated user",
-            extra={"target_user_id": user_id, "admin_id": g.current_user.id}
+            extra={"target_user_id": user_id, "admin_id": g.current_user.id},
         )
 
         return {"success": True, "user": target_profile.to_dict()}

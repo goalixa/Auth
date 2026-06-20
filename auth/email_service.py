@@ -89,8 +89,7 @@ class EmailService:
 
         # Use template
         html_body = EmailTemplates.password_reset_request(
-            reset_link=reset_url,
-            recipient_email=to
+            reset_link=reset_url, recipient_email=to
         )
 
         return self.send_email(to, "Reset Your Password", html_body)
@@ -114,15 +113,12 @@ class EmailService:
 
         # Use template
         html_body = EmailTemplates.verify_email(
-            verify_link=verify_url,
-            recipient_email=to
+            verify_link=verify_url, recipient_email=to
         )
 
         return self.send_email(to, "Verify Your Email Address", html_body)
 
-    def send_password_reset_confirmation_email(
-        self, to: str
-    ) -> bool:
+    def send_password_reset_confirmation_email(self, to: str) -> bool:
         """
         Send a password reset confirmation email.
 
@@ -132,15 +128,11 @@ class EmailService:
         Returns:
             True if email was sent successfully, False otherwise
         """
-        html_body = EmailTemplates.password_reset_confirmation(
-            recipient_email=to
-        )
+        html_body = EmailTemplates.password_reset_confirmation(recipient_email=to)
 
         return self.send_email(to, "Password Successfully Reset", html_body)
 
-    def send_welcome_email(
-        self, to: str, app_url: str = None
-    ) -> bool:
+    def send_welcome_email(self, to: str, app_url: str = None) -> bool:
         """
         Send a welcome email to newly verified users.
 
@@ -157,8 +149,7 @@ class EmailService:
         login_url = f"{app_url}/#/login"
 
         html_body = EmailTemplates.welcome_user(
-            recipient_email=to,
-            login_link=login_url
+            recipient_email=to, login_link=login_url
         )
 
         return self.send_email(to, "Welcome to Goalixa!", html_body)

@@ -12,9 +12,17 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from app import create_app, db
 from auth.models import (
-    User, SyntraUser, RefreshToken, EmailVerificationToken, PasswordResetToken
+    User,
+    SyntraUser,
+    RefreshToken,
+    EmailVerificationToken,
+    PasswordResetToken,
 )
-from migration_helper import export_sqlite_data, validate_migration, print_migration_status
+from migration_helper import (
+    export_sqlite_data,
+    validate_migration,
+    print_migration_status,
+)
 
 
 def migrate_from_sqlite():
@@ -22,8 +30,7 @@ def migrate_from_sqlite():
     Main migration function: SQLite -> PostgreSQL
     """
     sqlite_db_path = os.getenv(
-        "SQLITE_DB_PATH",
-        os.path.join(os.path.dirname(__file__), "data.db")
+        "SQLITE_DB_PATH", os.path.join(os.path.dirname(__file__), "data.db")
     )
 
     print_migration_status(sqlite_db_path, os.getenv("AUTH_DATABASE_URI", "Not set"))
@@ -59,7 +66,7 @@ def migrate_from_sqlite():
                     password_hash=user_row.get("password_hash"),
                     active=user_row.get("active", True),
                     email_verified=user_row.get("email_verified", False),
-                    created_at=user_row.get("created_at")
+                    created_at=user_row.get("created_at"),
                 )
                 db.session.add(user)
             db.session.commit()
@@ -83,7 +90,7 @@ def migrate_from_sqlite():
                     user_agent=token_row.get("user_agent"),
                     ip_address=token_row.get("ip_address"),
                     last_seen_at=token_row.get("last_seen_at"),
-                    created_at=token_row.get("created_at")
+                    created_at=token_row.get("created_at"),
                 )
                 db.session.add(token)
             db.session.commit()
@@ -99,11 +106,13 @@ def migrate_from_sqlite():
                     token=token_row.get("token"),
                     expires_at=token_row.get("expires_at"),
                     used_at=token_row.get("used_at"),
-                    created_at=token_row.get("created_at")
+                    created_at=token_row.get("created_at"),
                 )
                 db.session.add(token)
             db.session.commit()
-            print(f"✓ Migrated {len(sqlite_data['email_verification_token'])} email tokens")
+            print(
+                f"✓ Migrated {len(sqlite_data['email_verification_token'])} email tokens"
+            )
 
         # Step 6: Migrate password reset tokens
         print("Step 6: Migrating password reset tokens...")
@@ -115,11 +124,13 @@ def migrate_from_sqlite():
                     token=token_row.get("token"),
                     expires_at=token_row.get("expires_at"),
                     used_at=token_row.get("used_at"),
-                    created_at=token_row.get("created_at")
+                    created_at=token_row.get("created_at"),
                 )
                 db.session.add(token)
             db.session.commit()
-            print(f"✓ Migrated {len(sqlite_data['password_reset_token'])} password reset tokens")
+            print(
+                f"✓ Migrated {len(sqlite_data['password_reset_token'])} password reset tokens"
+            )
 
         # Step 7: Migrate syntra_user data (if exists)
         print("Step 7: Migrating syntra_user data...")
@@ -132,7 +143,7 @@ def migrate_from_sqlite():
                     department=user_row.get("department"),
                     created_by=user_row.get("created_by"),
                     active=user_row.get("active", True),
-                    created_at=user_row.get("created_at")
+                    created_at=user_row.get("created_at"),
                 )
                 db.session.add(user)
             db.session.commit()
@@ -141,16 +152,16 @@ def migrate_from_sqlite():
         # Step 8: Validation
         print("\nStep 8: Validating migration...")
         if validate_migration(sqlite_data, db.engine.raw_connection()):
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("✓ MIGRATION COMPLETED SUCCESSFULLY")
-            print("="*60)
+            print("=" * 60)
             print(f"\nPostgreSQL database is ready for use.")
             print(f"You can now safely delete the SQLite database at: {sqlite_db_path}")
             return 0
         else:
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("❌ MIGRATION VALIDATION FAILED")
-            print("="*60)
+            print("=" * 60)
             return 1
 
 

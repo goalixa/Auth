@@ -18,6 +18,7 @@ load_dotenv()
 from app import create_app
 from auth.models import db, User
 
+
 def init_database():
     """Initialize database tables and create admin user."""
     app = create_app()
@@ -49,13 +50,16 @@ def init_database():
         else:
             print("No ADMIN_EMAIL or ADMIN_PASSWORD found in environment.")
             print("Set these in .env file to create an admin user automatically.")
-            print("Or register a new user via the /register endpoint (if REGISTERABLE=1)")
+            print(
+                "Or register a new user via the /register endpoint (if REGISTERABLE=1)"
+            )
 
         # Show all users
         users = User.query.all()
         print(f"\nTotal users in database: {len(users)}")
         for user in users:
             print(f"  - ID: {user.id}, Email: {user.email}, Active: {user.active}")
+
 
 if __name__ == "__main__":
     init_database()

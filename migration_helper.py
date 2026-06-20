@@ -21,9 +21,7 @@ def export_sqlite_data(sqlite_db_path):
     cursor = conn.cursor()
 
     # Get all table names
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    )
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = [row[0] for row in cursor.fetchall()]
 
     data = {}
@@ -49,7 +47,9 @@ def validate_migration(sqlite_data, postgres_conn):
         sqlite_count = len(rows)
 
         if postgres_count != sqlite_count:
-            print(f"❌ {table}: SQLite has {sqlite_count}, PostgreSQL has {postgres_count}")
+            print(
+                f"❌ {table}: SQLite has {sqlite_count}, PostgreSQL has {postgres_count}"
+            )
             return False
         else:
             print(f"✓ {table}: {postgres_count} rows migrated correctly")
@@ -61,10 +61,10 @@ def print_migration_status(sqlite_db_path, postgres_uri):
     """
     Print status of migration process
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("MIGRATION STATUS")
-    print("="*60)
+    print("=" * 60)
     print(f"SQLite DB: {sqlite_db_path}")
     print(f"PostgreSQL: {postgres_uri}")
     print(f"Timestamp: {datetime.utcnow().isoformat()}")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")

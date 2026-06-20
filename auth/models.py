@@ -9,6 +9,7 @@ import logging
 db = SQLAlchemy()
 logger = logging.getLogger(__name__)
 
+
 #
 class User(db.Model):
     __tablename__ = "user"
@@ -19,11 +20,25 @@ class User(db.Model):
     email_verified = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    refresh_tokens = db.relationship("RefreshToken", back_populates="user", lazy="dynamic")
-    email_verification_tokens = db.relationship("EmailVerificationToken", back_populates="user", lazy="dynamic")
-    reset_tokens = db.relationship("PasswordResetToken", back_populates="user", lazy="dynamic")
-    syntra_profile = db.relationship("SyntraUser", foreign_keys="SyntraUser.user_id", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    created_syntra_users = db.relationship("SyntraUser", foreign_keys="SyntraUser.created_by", backref="creator")
+    refresh_tokens = db.relationship(
+        "RefreshToken", back_populates="user", lazy="dynamic"
+    )
+    email_verification_tokens = db.relationship(
+        "EmailVerificationToken", back_populates="user", lazy="dynamic"
+    )
+    reset_tokens = db.relationship(
+        "PasswordResetToken", back_populates="user", lazy="dynamic"
+    )
+    syntra_profile = db.relationship(
+        "SyntraUser",
+        foreign_keys="SyntraUser.user_id",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    created_syntra_users = db.relationship(
+        "SyntraUser", foreign_keys="SyntraUser.created_by", backref="creator"
+    )
 
 
 class SyntraUser(db.Model):
@@ -35,16 +50,21 @@ class SyntraUser(db.Model):
     - operator: Can execute DevOps operations
     - viewer: Read-only access to dashboards and reports
     """
+
     __tablename__ = "syntra_user"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True
+    )
     role = db.Column(db.String(50), nullable=False, default="operator")
     department = db.Column(db.String(100))
     created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     active = db.Column(db.Boolean, default=True)
 
-    user = db.relationship("User", foreign_keys=[user_id], back_populates="syntra_profile")
+    user = db.relationship(
+        "User", foreign_keys=[user_id], back_populates="syntra_profile"
+    )
 
     def to_dict(self):
         """Convert to dictionary for API responses."""
@@ -81,7 +101,9 @@ class PasswordResetToken(db.Model):
 def create_reset_token(user, ttl_minutes=30):
     token = uuid.uuid4().hex
     expires_at = datetime.utcnow() + timedelta(minutes=ttl_minutes)
-    reset_token = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
+    reset_token = PasswordResetToken(
+        user_id=user.id, token=token, expires_at=expires_at
+    )
     db.session.add(reset_token)
     db.session.commit()
     logger.info("password reset token created", extra={"user_id": user.id})
@@ -120,7 +142,9 @@ class RefreshToken(db.Model):
     __tablename__ = "refresh_token"
     id = db.Column(db.Integer, primary_key=True)
     token = db.Column(db.String(255), unique=True, nullable=False)
-    token_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID for tracking
+    token_id = db.Column(
+        db.String(36), unique=True, nullable=False
+    )  # UUID for tracking
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -129,11 +153,11 @@ class RefreshToken(db.Model):
 
     # Device tracking for security
     device_name = db.Column(db.String(255))  # User-friendly device name
-    device_type = db.Column(db.String(50))   # desktop, mobile, tablet
-    device_id = db.Column(db.String(100))    # Device fingerprint
-    user_agent = db.Column(db.String(500))   # Browser user agent
-    ip_address = db.Column(db.String(45))    # IP address (supports IPv6)
-    last_seen_at = db.Column(db.DateTime)    # Last activity timestamp
+    device_type = db.Column(db.String(50))  # desktop, mobile, tablet
+    device_id = db.Column(db.String(100))  # Device fingerprint
+    user_agent = db.Column(db.String(500))  # Browser user agent
+    ip_address = db.Column(db.String(45))  # IP address (supports IPv6)
+    last_seen_at = db.Column(db.DateTime)  # Last activity timestamp
 
     user = db.relationship("User", back_populates="refresh_tokens")
 
@@ -159,7 +183,9 @@ class RefreshToken(db.Model):
             "device": self.get_device_info(),
             "device_type": self.device_type,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+            "last_seen_at": (
+                self.last_seen_at.isoformat() if self.last_seen_at else None
+            ),
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "is_current": self.revoked_at is None,
         }
@@ -191,25 +217,21 @@ def cleanup_expired_tokens(days_to_keep=7):
 
     # Clean up refresh tokens
     deleted_refresh = RefreshToken.query.filter(
-        db.or_(
-            RefreshToken.revoked_at < cutoff,
-            RefreshToken.expires_at < cutoff
-        )
+        db.or_(RefreshToken.revoked_at < cutoff, RefreshToken.expires_at < cutoff)
     ).delete()
 
     # Clean up expired/used email verification tokens
     deleted_verification = EmailVerificationToken.query.filter(
         db.or_(
             EmailVerificationToken.used_at < cutoff,
-            EmailVerificationToken.expires_at < cutoff
+            EmailVerificationToken.expires_at < cutoff,
         )
     ).delete()
 
     # Clean up expired/used password reset tokens
     deleted_reset = PasswordResetToken.query.filter(
         db.or_(
-            PasswordResetToken.used_at < cutoff,
-            PasswordResetToken.expires_at < cutoff
+            PasswordResetToken.used_at < cutoff, PasswordResetToken.expires_at < cutoff
         )
     ).delete()
 
@@ -223,8 +245,8 @@ def cleanup_expired_tokens(days_to_keep=7):
             "refresh_tokens": deleted_refresh,
             "verification_tokens": deleted_verification,
             "reset_tokens": deleted_reset,
-            "cutoff_days": days_to_keep
-        }
+            "cutoff_days": days_to_keep,
+        },
     )
     return total_deleted
 
@@ -239,10 +261,11 @@ def get_user_active_tokens(user_id):
     Returns:
         List of active RefreshToken objects
     """
-    return RefreshToken.query.filter_by(
-        user_id=user_id,
-        revoked_at=None
-    ).order_by(RefreshToken.created_at.desc()).all()
+    return (
+        RefreshToken.query.filter_by(user_id=user_id, revoked_at=None)
+        .order_by(RefreshToken.created_at.desc())
+        .all()
+    )
 
 
 def count_user_active_tokens(user_id):
@@ -255,10 +278,7 @@ def count_user_active_tokens(user_id):
     Returns:
         Number of active tokens
     """
-    return RefreshToken.query.filter_by(
-        user_id=user_id,
-        revoked_at=None
-    ).count()
+    return RefreshToken.query.filter_by(user_id=user_id, revoked_at=None).count()
 
 
 def revoke_oldest_tokens(user_id, max_tokens=5):
@@ -272,16 +292,17 @@ def revoke_oldest_tokens(user_id, max_tokens=5):
     Returns:
         Number of tokens revoked
     """
-    active_tokens = RefreshToken.query.filter_by(
-        user_id=user_id,
-        revoked_at=None
-    ).order_by(RefreshToken.created_at.asc()).all()
+    active_tokens = (
+        RefreshToken.query.filter_by(user_id=user_id, revoked_at=None)
+        .order_by(RefreshToken.created_at.asc())
+        .all()
+    )
 
     if len(active_tokens) <= max_tokens:
         return 0
 
     # Revoke oldest tokens
-    to_revoke = active_tokens[:len(active_tokens) - max_tokens]
+    to_revoke = active_tokens[: len(active_tokens) - max_tokens]
     for token in to_revoke:
         token.revoke()
 
@@ -292,7 +313,7 @@ def revoke_oldest_tokens(user_id, max_tokens=5):
             "user_id": user_id,
             "revoked_count": len(to_revoke),
             "max_tokens": max_tokens,
-        }
+        },
     )
     return len(to_revoke)
 
@@ -322,9 +343,12 @@ def init_db(app):
             if not syntra_user:
                 syntra_user = SyntraUser(
                     user_id=user.id,
-                    role='admin',
+                    role="admin",
                     active=True,
                 )
                 db.session.add(syntra_user)
                 db.session.commit()
-                logger.info("admin syntra user created", extra={"email": admin_email, "role": "admin"})
+                logger.info(
+                    "admin syntra user created",
+                    extra={"email": admin_email, "role": "admin"},
+                )

@@ -37,14 +37,18 @@ if seq_result:
     if current_seq <= max_id:
         new_seq = max_id + 1
         print(f"Updating sequence to: {new_seq}")
-        cursor.execute("UPDATE sqlite_sequence SET seq = ? WHERE name='user'", (new_seq,))
+        cursor.execute(
+            "UPDATE sqlite_sequence SET seq = ? WHERE name='user'", (new_seq,)
+        )
         conn.commit()
         print("✓ Sequence updated successfully!")
     else:
         print("✓ Sequence is already correct")
 else:
     print("No sequence found for user table, creating one...")
-    cursor.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('user', ?)", (max_id + 1,))
+    cursor.execute(
+        "INSERT INTO sqlite_sequence (name, seq) VALUES ('user', ?)", (max_id + 1,)
+    )
     conn.commit()
     print("✓ Sequence created successfully!")
 

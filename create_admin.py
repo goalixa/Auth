@@ -4,6 +4,7 @@ Script to create an admin user for the admin panel.
 Usage:
     python create_admin.py admin@example.com password123
 """
+
 import sys
 import os
 from datetime import datetime
@@ -14,7 +15,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from werkzeug.security import generate_password_hash
 
 # Set up the Flask app and database
-os.chdir('/Users/snapp/Desktop/projects/Goalixa/Services/goalixa-auth')
+# Using current directory as base
+current_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(current_dir)
 
 from app import app
 from auth.models import db, User, SyntraUser
@@ -43,13 +46,13 @@ def create_admin_user(email: str, password: str):
 
         if syntra_user:
             print(f"SyntraUser already exists, updating role to admin...")
-            syntra_user.role = 'admin'
+            syntra_user.role = "admin"
             syntra_user.active = True
         else:
             print(f"Creating SyntraUser with admin role...")
             syntra_user = SyntraUser(
                 user_id=user.id,
-                role='admin',
+                role="admin",
                 active=True,
             )
             db.session.add(syntra_user)
@@ -62,7 +65,7 @@ def create_admin_user(email: str, password: str):
         print(f"   Role: admin")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python create_admin.py <email> <password>")
         sys.exit(1)
